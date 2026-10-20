@@ -157,6 +157,7 @@ enable_root_ssh() {
 # ═══════════════════════════════════════════════════════════════
 
 config_dns() {
+    local choice
     while true; do
         show_submenu "配置DNS" \
             "自动配置DNS" \
@@ -246,7 +247,7 @@ apply_dns_config() {
         echo "  - $server"
     done
 
-    if check_network_connection; then
+    if check_ip_connectivity; then
         msg_success "DNS测试成功"
     else
         msg_warning "DNS测试失败,请检查配置"
@@ -255,6 +256,7 @@ apply_dns_config() {
 
 manage_dns_backups() {
     local _DNS_FILE="/etc/resolv.conf"
+    local choice
     while true; do
         show_submenu "DNS备份管理" \
             "恢复历史备份" \
@@ -266,8 +268,8 @@ manage_dns_backups() {
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) restore_selected_dns ;;
-            2) delete_selected_dns ;;
+            1) restore_selected_dns; [[ $? -eq 255 ]] && continue ;;
+            2) delete_selected_dns; [[ $? -eq 255 ]] && continue ;;
             3) backup_clear_all "DNS" "$_DNS_FILE" ;;
             *) msg_error "无效选择" ;;
         esac
@@ -277,7 +279,7 @@ manage_dns_backups() {
 
 restore_selected_dns() {
     local _DNS_FILE="/etc/resolv.conf"
-    if ! backup_select "恢复DNS历史备份" "$_DNS_FILE" "DNS"; then return; fi
+    backup_select "恢复DNS历史备份" "$_DNS_FILE" "DNS" || return $?
 
     backup_preview "$_SELECTED_BACKUP" "^nameserver"
 
@@ -289,7 +291,7 @@ restore_selected_dns() {
 
 delete_selected_dns() {
     local _DNS_FILE="/etc/resolv.conf"
-    if ! backup_select "删除DNS历史备份" "$_DNS_FILE" "DNS"; then return; fi
+    backup_select "删除DNS历史备份" "$_DNS_FILE" "DNS" || return $?
 
     backup_preview "$_SELECTED_BACKUP" "^nameserver"
 
@@ -303,47 +305,6 @@ delete_selected_dns() {
 # 解除 DNS 53 端口占用问题
 # ═══════════════════════════════════════════════════════════════
 
-unlock_dns_port() {
-    show_section "解除DNS服务53端口占用"
-
-    if is_service_active systemd-resolved; then
-        msg_info "发现systemd-resolved占用53端口"
-
-        if confirm "是否停止systemd-resolved?"; then
-            stop_service systemd-resolved
-            disable_service systemd-resolved
-
-            local resolved_conf="/etc/systemd/resolved.conf"
-            if [[ -f $resolved_conf ]]; then
-                if grep -q "^DNSStubListener=yes" "$resolved_conf"; then
-                    sed -i 's/^DNSStubListener=yes/DNSStubListener=no/' "$resolved_conf"
-                elif ! grep -q "DNSStubListener" "$resolved_conf"; then
-                    echo "DNSStubListener=no" >> "$resolved_conf"
-                fi
-
-                msg_success "systemd-resolved已配置"
-            fi
-        fi
-    else
-        msg_info "未发现systemd-resolved占用53端口"
-    fi
-
-    local pids
-    pids=$(lsof -i :53 2>/dev/null | grep -v "COMMAND" | awk '{print $2}' | sort -u)
-
-    if [[ -n $pids ]]; then
-        msg_warning "发现以下进程占用53端口:"
-        lsof -i :53 2>/dev/null | grep -v "COMMAND" | sed 's/^/  /'
-
-        if confirm "是否终止这些进程?"; then
-            for pid in $pids; do
-                kill -9 "$pid" 2>/dev/null || true
-            done
-            msg_success "53端口已释放"
-        fi
-    else
-        msg_info "53端口未被占用"
-    fi
-}
+# unlock_dns_port 已迁移至lib/utils.sh, 供基础配置与dnscat2模块共用
 
 register_main_menu "基础配置" "config_basic"

@@ -49,19 +49,22 @@ check_os() {
     if [[ -f /etc/os-release ]]; then
         # shellcheck disable=SC1091
         source /etc/os-release
-        
+
         OS_ID="$ID"
         OS_CODENAME="${VERSION_CODENAME:-}"
         OS_NAME="$NAME"
-        OS_VER="$VERSION_ID"
-        
+        OS_VER="${VERSION_ID:-}"
+
         export OS_ID OS_CODENAME OS_NAME OS_VER
-        
+
         case "$OS_ID" in
-            ubuntu|kali|debian)
+            ubuntu|kali*|debian)
                 return 0
                 ;;
             *)
+                if [[ "${ID_LIKE:-}" =~ (debian|kali|ubuntu) ]]; then
+                    return 0
+                fi
                 msg_error "本脚本仅适用于 Ubuntu / Kali / Debian 系统"
                 exit 1
                 ;;
@@ -80,3 +83,7 @@ get_distro_id() { echo "${OS_ID:-unknown}"; }
 get_distro_codename() { echo "${OS_CODENAME:-unknown}"; }
 get_os_name() { echo "${OS_NAME:-Unknown}"; }
 get_os_ver() { echo "${OS_VER:-Unknown}"; }
+
+get_arch() { dpkg --print-architecture 2>/dev/null || uname -m; }
+get_memory_info() { LC_ALL=C free -h 2>/dev/null | grep "^Mem:" | awk '{print $2}' || echo "未知"; }
+get_disk_usage() { df -h / 2>/dev/null | tail -1 | awk '{print $5}' || echo "未知"; }

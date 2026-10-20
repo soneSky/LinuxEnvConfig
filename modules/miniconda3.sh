@@ -43,13 +43,12 @@ _select_miniconda_source() {
     show_submenu "$title" \
         "哈工大miniconda" \
         "北京大学miniconda" \
-        "清华大学miniconda" \
         "浙江大学miniconda" \
         "南京大学miniconda" \
         "官方源miniconda"
     
     local choice
-    msg_prompt "请选择序号 [1-6, 0返回, q退出]"
+    msg_prompt "请选择序号 [1-5, 0返回, q退出]"
 
     if [[ "$choice" == "q" || "$choice" == "Q" ]]; then
         exit 0
@@ -62,10 +61,9 @@ _select_miniconda_source() {
     case "$choice" in
         1) RET_MIRROR_URL="https://mirrors.hit.edu.cn/anaconda"; msg_info "选择使用哈工大miniconda软件源" ;;
         2) RET_MIRROR_URL="https://mirrors.pku.edu.cn/anaconda"; msg_info "选择使用北京大学miniconda软件源" ;;
-        3) RET_MIRROR_URL="https://mirrors.tuna.tsinghua.edu.cn/anaconda"; msg_info "选择使用清华大学miniconda软件源" ;;
-        4) RET_MIRROR_URL="https://mirrors.zju.edu.cn/anaconda"; msg_info "选择使用浙江大学miniconda软件源" ;;
-        5) RET_MIRROR_URL="https://mirrors.nju.edu.cn/anaconda"; msg_info "选择使用南京大学miniconda软件源" ;;
-        6) RET_MIRROR_URL="https://repo.anaconda.com"; msg_info "选择使用官方源miniconda软件源" ;;
+        3) RET_MIRROR_URL="https://mirrors.zju.edu.cn/anaconda"; msg_info "选择使用浙江大学miniconda软件源" ;;
+        4) RET_MIRROR_URL="https://mirrors.nju.edu.cn/anaconda"; msg_info "选择使用南京大学miniconda软件源" ;;
+        5) RET_MIRROR_URL="https://repo.anaconda.com"; msg_info "选择使用官方源miniconda软件源" ;;
         *) msg_error "无效选择"; return 1 ;;
     esac
     return 0
@@ -76,6 +74,7 @@ _select_miniconda_source() {
 # ═══════════════════════════════════════════════════════════════
 
 config_miniconda3() {
+    local choice ret
     while true; do
         show_submenu "Miniconda3配置" \
             "安装Miniconda3" \
@@ -89,7 +88,7 @@ config_miniconda3() {
             q|Q) exit 0 ;;
             1) install_miniconda3; [[ $? -eq 255 ]] && continue ;;
             2) remove_miniconda3; [[ $? -eq 255 ]] && continue ;;
-            3) push_path "配置软件源"; configure_conda_mirror; pop_path; continue ;;
+            3) push_path "配置软件源"; configure_conda_mirror; ret=$?; pop_path; [[ $ret -eq 255 ]] && continue ;;
             *) msg_error "无效选择" ;;
         esac
 
@@ -140,7 +139,7 @@ install_miniconda3() {
 
     if [[ "$content_type" == *"text/html"* ]]; then
         msg_error "镜像源返回了验证页面而非安装包"
-        msg_info "当前镜像可能存在反爬虫限制，建议更换为 清华大学 或 北京大学 镜像。"
+        msg_info "当前镜像可能存在反爬虫限制，建议更换为其他镜像。"
         return 1
     fi
 

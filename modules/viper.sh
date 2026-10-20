@@ -25,7 +25,7 @@
 # 全局变量定义
 # ═══════════════════════════════════════════════════════════════
 
-readonly VIPER_DIR="/root/VIPER"
+readonly VIPER_DIR="/opt/VIPER"
 readonly VIPER_IMAGE="registry.cn-shenzhen.aliyuncs.com/toys/viper:latest"
 
 # ═══════════════════════════════════════════════════════════════
@@ -111,7 +111,7 @@ install_viper() {
     fi
 
     local host_ip
-    host_ip=$(get_best_ip)
+    prompt_host_ip "Viper" || return 1
     
     local viper_pass
     read -r -p "  ${CYAN}请设置Viper登录密码: ${NC}" viper_pass
@@ -150,11 +150,12 @@ services:
         hard: 65534
 EOF
 
-    docker_pull_image "${VIPER_IMAGE}"
+    if ! docker_pull_image "${VIPER_IMAGE}"; then
+        return 1
+    fi
 
     msg_info "正在启动Viper容器服务..."
-    sudo "${COMPOSE_CMD[@]}" up -d 2>&1 | sed 's/^/  /'
-    if action "Viper容器启动操作完成" "启动Viper失败"; then
+    if docker_compose_start "${VIPER_DIR}" "Viper" "up"; then
         msg_info "正在等待系统初始化(约15秒)..."
         sleep 15
         msg_success "Viper部署成功"
@@ -216,8 +217,16 @@ stop_viper() {
 
 start_viper() {
     show_section "启动Viper服务"
+    if [[ ! -d "${VIPER_DIR}" ]]; then
+        msg_error "未找到Viper安装目录, 请先安装"
+        return 1
+    fi
+
     local host_ip
-    host_ip=$(get_best_ip)
+    prompt_host_ip "Viper" || return 1
+
+    local viper_pass
+    viper_pass=$(grep -E "command:" "${VIPER_DIR}/docker-compose.yml" | grep -oE '\["[^"]+"\]' | tr -d '[]"' || true)
 
     if docker_compose_start "${VIPER_DIR}" "Viper"; then
         msg_success "服务已恢复运行"

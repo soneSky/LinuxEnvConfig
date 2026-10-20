@@ -20,8 +20,6 @@
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-set -euo pipefail
-
 # ═══════════════════════════════════════════════════════════════
 # 全局变量定义
 # ═══════════════════════════════════════════════════════════════
@@ -39,7 +37,7 @@ readonly SCOPESENTRY_DEFAULT_PORT="8082"
 
 config_scopesentry() {
     while true; do
-        show_submenu "ScopeSentry" \
+        show_submenu "ScopeSentry配置" \
             "安装ScopeSentry" \
             "卸载ScopeSentry" \
             "启动ScopeSentry" \
@@ -139,17 +137,17 @@ EOF"
     fi
 
     # 拉取镜像
-    docker_pull_image "$SCOPESENTRY_IMAGE"
-    docker_pull_image "$SCOPESENTRY_MONGO"
-    docker_pull_image "$SCOPESENTRY_REDIS"
-    docker_pull_image "$SCOPESENTRY_SCAN"
+    if ! docker_pull_image "$SCOPESENTRY_IMAGE"; then return 1; fi
+    if ! docker_pull_image "$SCOPESENTRY_MONGO"; then return 1; fi
+    if ! docker_pull_image "$SCOPESENTRY_REDIS"; then return 1; fi
+    if ! docker_pull_image "$SCOPESENTRY_SCAN"; then return 1; fi
 
     # 分两步启动以提高稳定性：先启动数据库，再启动主程序
     msg_info "正在初始化基础设施(MongoDB & Redis)..."
-    _docker_compose_render_premium "Infrastructure" "up" mongodb redis
-    
+    docker_compose_start "${SCOPESENTRY_DIR}" "Infrastructure" "up" mongodb redis
+
     msg_info "正在启动核心服务与扫描节点..."
-    _docker_compose_render_premium "ScopeSentry" "up"
+    docker_compose_start "${SCOPESENTRY_DIR}" "ScopeSentry" "up"
     
     # 启动状态自修复机制
     local i total_services running_services
@@ -161,7 +159,7 @@ EOF"
         fi
         msg_warning "部分服务($running_services/$total_services)未就绪,正在尝试修复启动($i/3)..."
         sleep 5
-        _docker_compose_render_premium "Recovery" "up"
+        docker_compose_start "${SCOPESENTRY_DIR}" "ScopeSentry" "up"
     done
     
     if action "容器编排指令执行完成" "服务启动失败"; then
@@ -173,7 +171,7 @@ EOF"
         while [[ -z "$raw_creds" || -z "$plugin_key" ]] && [[ $count -lt 5 ]]; do
             raw_creds=$(sudo "${COMPOSE_CMD[@]}" logs scope-sentry 2>/dev/null | grep "User/Password:" | tail -n 1 | sed -n 's/.*User\/Password: //p' | tr -d '\r')
             plugin_key=$(sudo "${COMPOSE_CMD[@]}" logs scope-sentry 2>/dev/null | grep "Plugin Key:" | tail -n 1 | sed -n 's/.*Plugin Key: //p' | tr -d '\r')
-            [[ -z "$raw_creds" || -z "$plugin_key" ]] && sleep 5 && ((count++))
+            [[ -z "$raw_creds" || -z "$plugin_key" ]] && sleep 5 && count=$((count + 1))
         done
 
         local user="ScopeSentry" pass="未知"
@@ -222,7 +220,7 @@ start_scopesentry() {
         fi
         msg_warning "部分服务($running_services/$total_services)未就绪,正在尝试修复启动($i/3)..."
         sleep 5
-        _docker_compose_render_premium "Recovery" "up"
+        docker_compose_start "${SCOPESENTRY_DIR}" "ScopeSentry" "up"
     done
 
     local host_ip host_port scopesentry_user scopesentry_pass plugin_key
@@ -249,50 +247,7 @@ stop_scopesentry() {
 
 show_scopesentry_status() {
     show_section "ScopeSentry状态信息"
-    if [[ ! -d "${SCOPESENTRY_DIR}" ]]; then
-        msg_error "未检测到安装目录"
-        return 1
-    fi
-    check_docker_compose || return 1
-    cd "${SCOPESENTRY_DIR}" || return 1
-    
-    local widths="18 12 10 18"
-    echo ""
-    msg_table_row "$widths" "${BOLD}服务名称" "运行状态" "健康状况" "端口映射${NC}"
-    draw_line "-" "${GRAY}"
-    
-    # 获取并解析容器状态
-    local line
-    while read -r line; do
-        [[ -z "$line" ]] && continue
-        local service state health ports
-        # 兼容旧版本 compose 的解析方式
-        IFS='|' read -r service state health ports <<< "$line"
-        
-        # 状态颜色化处理
-        local state_color="${NC}"
-        case "${state,,}" in
-            running) state_color="${GREEN}" ;;
-            exited|dead) state_color="${RED}" ;;
-            *) state_color="${YELLOW}" ;;
-        esac
-        
-        local health_color="${NC}"
-        case "${health,,}" in
-            healthy) health_color="${GREEN}" ;;
-            unhealthy) health_color="${RED}" ;;
-            starting) health_color="${YELLOW}" ;;
-            *) health_color="${GRAY}" ;;
-        esac
-        
-        # 简化端口映射显示
-        local simple_ports
-        simple_ports=$(echo "$ports" | grep -oE "[0-9]+->[0-9]+" | head -n 1)
-        [[ -z "$simple_ports" ]] && simple_ports="-"
-
-        msg_table_row "$widths" "${CYAN}${service}${NC}" "${state_color}${state}${NC}" "${health_color}${health:- -}${NC}" "${WHITE}${simple_ports}${NC}"
-    done < <(sudo "${COMPOSE_CMD[@]}" ps --format "{{.Service}}|{{.State}}|{{.Health}}|{{.Ports}}")
-    echo ""
+    show_compose_status_table "${SCOPESENTRY_DIR}" "ScopeSentry"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -347,4 +302,4 @@ reset_scopesentry_password() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置ScopeSentry" config_scopesentry
+register_main_menu "配置ScopeSentry" "config_scopesentry"

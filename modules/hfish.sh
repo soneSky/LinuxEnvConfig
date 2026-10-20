@@ -22,6 +22,14 @@
 
 
 # ═══════════════════════════════════════════════════════════════
+# 全局变量定义
+# ═══════════════════════════════════════════════════════════════
+
+readonly HFISH_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/hfish-server:latest"
+readonly HFISH_MYSQL_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/mysql:8.0"
+readonly HFISH_DIR="/opt/hfish"
+
+# ═══════════════════════════════════════════════════════════════
 # HFish 配置主菜单
 # ═══════════════════════════════════════════════════════════════
 
@@ -58,36 +66,37 @@ install_hfish() {
     prompt_host_ip "HFish" || return 1
 
     msg_info "创建HFish目录..."
-    sudo mkdir -p /opt/hfish && cd /opt/hfish || return
-    sudo rm -f docker-compose.* > /dev/null 2>&1
+    sudo mkdir -p "${HFISH_DIR}"
 
     msg_info "生成DockerCompose配置文件..."
-    sudo tee docker-compose.yml > /dev/null <<-'EOF'
+    (
+        cd "${HFISH_DIR}" || exit 1
+        sudo rm -f docker-compose.* > /dev/null 2>&1
+        sudo tee docker-compose.yml > /dev/null <<EOF
 services:
   hfish:
-    image: registry.cn-hangzhou.aliyuncs.com/mingy123/hfish-server:latest
+    image: ${HFISH_IMAGE}
     container_name: hfish
     volumes:
-      - /opt/hfish:/usr/share/hfish
+      - ${HFISH_DIR}:/usr/share/hfish
     network_mode: host
     privileged: true
     depends_on:
       - mysql
   mysql:
     container_name: mysql8
-    image: registry.cn-hangzhou.aliyuncs.com/mingy123/mysql:8.0
+    image: ${HFISH_MYSQL_IMAGE}
     command: --default-authentication-plugin=mysql_native_password
     environment:
       - MYSQL_ROOT_PASSWORD=123456
 EOF
+    ) || return 1
 
-    docker_pull_image "registry.cn-hangzhou.aliyuncs.com/mingy123/mysql:8.0"
-    docker_pull_image "registry.cn-hangzhou.aliyuncs.com/mingy123/hfish-server:latest"
+    if ! docker_pull_image "${HFISH_MYSQL_IMAGE}"; then return 1; fi
+    if ! docker_pull_image "${HFISH_IMAGE}"; then return 1; fi
 
     msg_info "正在启动HFish容器服务..."
-    check_docker_compose || return 1
-    sudo "${COMPOSE_CMD[@]}" up -d 2>&1 | sed 's/^/  /'
-    if action "HFish启动操作完成" "启动服务失败"; then
+    if docker_compose_start "${HFISH_DIR}" "HFish" "up"; then
         msg_info "正在等待容器就绪..."
         sleep 5
         msg_success "HFish安装部署完成"
@@ -101,13 +110,13 @@ EOF
 
 update_hfish() {
     show_section "更新HFish服务"
-    docker_pull_image "registry.cn-hangzhou.aliyuncs.com/mingy123/hfish-server:latest"
+    docker_pull_image "${HFISH_IMAGE}"
     action "镜像更新成功，请重新启动以生效" "镜像更新失败"
 }
 
 stop_hfish() {
     show_section "停止HFish服务"
-    docker_compose_stop "/opt/hfish" "HFish"
+    docker_compose_stop "${HFISH_DIR}" "HFish"
 }
 
 start_hfish() {
@@ -116,7 +125,7 @@ start_hfish() {
     local host_ip
     prompt_host_ip "HFish" "host_ip" "false"
 
-    if docker_compose_start "/opt/hfish" "HFish"; then
+    if docker_compose_start "${HFISH_DIR}" "HFish"; then
         msg_success "HFish启动成功"
         _display_hfish_info "${host_ip}"
     fi
@@ -155,9 +164,7 @@ get_hfish_db_info() {
 
 remove_hfish() {
     show_section "卸载HFish蜜罐"
-    docker_compose_remove "/opt/hfish" "HFish" \
-        "registry.cn-hangzhou.aliyuncs.com/mingy123/hfish-server:latest" \
-        "registry.cn-hangzhou.aliyuncs.com/mingy123/mysql:8.0"
+    docker_compose_remove "${HFISH_DIR}" "HFish" "${HFISH_IMAGE}" "${HFISH_MYSQL_IMAGE}"
 }
 
 register_main_menu "配置HFish" "config_hfish"

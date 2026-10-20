@@ -66,29 +66,22 @@ install_beef() {
     check_docker || return 1
     show_section "安装BeEF框架"
 
+    docker_confirm_reinstall "${BEEF_CONTAINER}" "BeEF" || return 0
+
     local host_ip
     prompt_host_ip "BeEF" || return 1
 
-    if ! docker_pull_image "${BEEF_IMAGE}"; then
+    if ! docker_deploy_container "${BEEF_IMAGE}" "${BEEF_CONTAINER}" "BeEF" \
+        "启动服务失败, 请检查端口 ${BEEF_PORT} 是否被占用" \
+        -it -p "${BEEF_PORT}:3000"; then
         return 1
     fi
 
-    msg_info "正在启动容器服务..."
-    docker rm -f "${BEEF_CONTAINER}" >/dev/null 2>&1
-    
-    docker run -dit \
-        -p "${BEEF_PORT}:3000" \
-        --name "${BEEF_CONTAINER}" \
-        "${BEEF_IMAGE}" >/dev/null 2>&1
-        
-    if action "BeEF容器创建成功" "启动服务失败, 请检查端口 ${BEEF_PORT} 是否被占用"; then
-        docker_wait_healthy "${BEEF_CONTAINER}" "BeEF"
-        msg_success "BeEF部署完成"
-        show_access_info \
-            "访问地址:http://${host_ip}:${BEEF_PORT}/ui/panel" \
-            "默认用户:beef" \
-            "默认密码:yijingsec"
-    fi
+    msg_success "BeEF部署完成"
+    show_access_info \
+        "访问地址:http://${host_ip}:${BEEF_PORT}/ui/panel" \
+        "默认用户:beef" \
+        "默认密码:yijingsec"
 }
 
 # ═══════════════════════════════════════════════════════════════

@@ -79,8 +79,7 @@ install_crapi() {
     fi
 
     msg_info "正在启动crAPI容器服务..."
-    if ! sudo "${COMPOSE_CMD[@]}" up -d 2>&1 | sed 's/^/  /'; then
-        msg_error "启动容器失败"
+    if ! docker_compose_start "${CRAPI_DIR}" "crAPI" "up"; then
         return 1
     fi
 

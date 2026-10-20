@@ -20,9 +20,24 @@
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# ═══════════════════════════════════════════════════════════════
+# 全局变量与配置
+# ═══════════════════════════════════════════════════════════════
+
+readonly JVM_INSTALL_BASE="/usr/lib/jvm"
+readonly JDK_ENV_FILE="/etc/profile.d/jdk.sh"
+readonly YIJINGLAB_API_URL="https://study.yijinglab.com/api/tools/oss/tempurl"
+readonly OPENJDK_MIRROR_BASE="https://mirrors.huaweicloud.com/openjdk"
+readonly JDK_BINARIES=("java" "javac" "keytool" "jar" "jarsigner")
+
+CLIENT_KEY_FILE="${CLIENT_KEY_FILE:-/etc/yijinglab_client_key}"
+
+readonly ORACLE_JDK_VERSIONS=("jdk1.8.0_421" "jdk-11.0.24" "jdk-17.0.12" "jdk-21.0.4" "jdk-22.0.2" "jdk-23.0.1")
+readonly ORACLE_JDK_NAMES=("jdk-8u421-linux-x64.tar.gz" "jdk-11.0.24_linux-x64_bin.tar.gz" "jdk-17.0.12_linux-x64_bin.tar.gz" "jdk-21.0.4_linux-x64_bin.tar.gz" "jdk-22.0.2_linux-x64_bin.tar.gz" "jdk-23_linux-x64_bin.tar.gz")
+readonly ORACLE_JDK_LABELS=("Oracle JDK 8 LTS" "Oracle JDK 11 LTS" "Oracle JDK 17 LTS" "Oracle JDK 21 LTS" "Oracle JDK 22 LTS" "Oracle JDK 23 LTS")
 
 # ═══════════════════════════════════════════════════════════════
-# JDK 配置主菜单
+# JDK配置主菜单
 # ═══════════════════════════════════════════════════════════════
 
 config_jdk() {
@@ -34,13 +49,13 @@ config_jdk() {
             "删除JDK环境" \
             "查看已安装JDK"
 
-        local choice
+        local choice ret
         msg_prompt "请选择操作 [0-5, q退出]"
 
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) push_path "安装OracleJDK"; config_jdk_oracle; pop_path; continue ;;
+            1) push_path "安装OracleJDK"; install_oracle_from_yijinglab; ret=$?; pop_path; [[ $ret -eq 255 ]] && continue ;;
             2) push_path "安装OpenJDK"; config_jdk_openjdk; pop_path; continue ;;
             3) switch_jdk ;;
             4) remove_jdk ;;
@@ -53,44 +68,92 @@ config_jdk() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# OracleJDK 配置（三级菜单示例）
+# OracleJDK配置
 # ═══════════════════════════════════════════════════════════════
 
-config_jdk_oracle() {
-    while true; do
-        show_submenu "OracleJDK安装" \
-            "从study.yijinglab.com安装" \
-            "从www.injdk.cn安装"
+validate_client_key() {
+    local token="$1"
+    local test_file="test"
 
-        msg_prompt "请选择安装源 [0-2, q退出]"
+    msg_info "正在验证客户端密钥..."
+    local resp
+    resp=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"token\":\"$token\",\"tempUrl\":\"$test_file\"}" \
+        "$YIJINGLAB_API_URL" 2>/dev/null)
 
-        case $choice in
-            0) return ;;
-            q|Q) exit 0 ;;
-            1) install_oracle_from_yijinglab || continue ;;
-            2) install_oracle_from_injdk || continue ;;
-            *) msg_error "无效选择" ;;
+    if [[ -z $resp ]]; then
+        msg_error "无法连接到验证服务器，请检查网络"
+        return 1
+    fi
+
+    local success code msg
+    success=$(echo "$resp" | jq -r '.success' 2>/dev/null)
+    code=$(echo "$resp" | jq -r '.code' 2>/dev/null)
+    msg=$(echo "$resp" | jq -r '.msg' 2>/dev/null)
+
+    if [[ "$success" == "true" ]] || [[ "$code" == "15010005" ]]; then
+        msg_success "客户端密钥验证通过"
+        return 0
+    else
+        case $code in
+            15010004) msg_error "密钥无效, 请登录study.yijinglab.com获取最新密钥" ;;
+            *) msg_error "密钥验证失败: ${msg:-未知错误} (错误码: ${code:-未知})" ;;
         esac
-
-        pause
-    done
+        return 1
+    fi
 }
-
-readonly ORACLE_JDK_VERSIONS=("jdk1.8.0_421" "jdk-11.0.24" "jdk-17.0.12" "jdk-21.0.4" "jdk-22.0.2" "jdk-23.0.1")
-readonly ORACLE_JDK_NAMES=("jdk-8u421-linux-x64.tar.gz" "jdk-11.0.24_linux-x64_bin.tar.gz" "jdk-17.0.12_linux-x64_bin.tar.gz" "jdk-21.0.4_linux-x64_bin.tar.gz" "jdk-22.0.2_linux-x64_bin.tar.gz" "jdk-23_linux-x64_bin.tar.gz")
-readonly ORACLE_JDK_LABELS=("Oracle JDK 8 LTS" "Oracle JDK 11 LTS" "Oracle JDK 17 LTS" "Oracle JDK 21 LTS" "Oracle JDK 22 LTS" "Oracle JDK 23 LTS")
 
 install_oracle_from_yijinglab() {
     push_path "study.yijinglab.com"
     show_section "从yijinglab安装OracleJDK"
 
-    local client_key
-    msg_prompt "请输入客户端密钥" "client_key"
+    local client_key=""
+
+    if [[ -f $CLIENT_KEY_FILE ]]; then
+        client_key=$(cat "$CLIENT_KEY_FILE" 2>/dev/null | xargs)
+        if [[ -n $client_key ]]; then
+            msg_info "检测到已保存的客户端密钥，正在验证可用性..."
+            if validate_client_key "$client_key"; then
+                msg_success "已保存的客户端密钥验证通过，直接使用"
+            else
+                msg_warning "已保存的客户端密钥已失效，请重新输入"
+                client_key=""
+                sudo rm -f "$CLIENT_KEY_FILE"
+            fi
+        fi
+    fi
 
     if [[ -z $client_key ]]; then
-        msg_error "客户端密钥不能为空"
-        pop_path
-        return 1
+        while true; do
+            msg_info "请前往教学平台获取您的客户端密钥:"
+            msg_star "获取路径: 教学平台 ➜ 我的班级 ➜ 课程云盘 ➜ 客户端密钥"
+            msg_star "平台链接: ${CYAN}https://study.yijinglab.com${NC}"
+            echo ""
+            msg_prompt "请输入客户端密钥" "client_key"
+
+            if [[ -z $client_key ]]; then
+                msg_error "客户端密钥不能为空"
+                if ! confirm "是否重新输入密钥?"; then
+                    pop_path
+                    return 255
+                fi
+                continue
+            fi
+
+            if validate_client_key "$client_key"; then
+                if echo "$client_key" | sudo tee "$CLIENT_KEY_FILE" >/dev/null; then
+                    sudo chmod 600 "$CLIENT_KEY_FILE"
+                    msg_info "客户端密钥已保存至 $CLIENT_KEY_FILE"
+                fi
+                break
+            else
+                if ! confirm "是否重新输入密钥?"; then
+                    pop_path
+                    return 255
+                fi
+            fi
+        done
     fi
 
     echo ""
@@ -104,72 +167,43 @@ install_oracle_from_yijinglab() {
 
     if [[ $version == "0" ]]; then
         pop_path
-        return 1
+        return 255
     fi
 
+    local ret=0
     if [[ $version =~ ^[0-9]+$ ]] && [[ $version -ge 1 && $version -le 6 ]]; then
         local index=$((version - 1))
         local jdk_ver=${ORACLE_JDK_VERSIONS[$index]}
         local jdk_name=${ORACLE_JDK_NAMES[$index]}
 
-        msg_info "正在获取 $jdk_name 的下载链接..."
+        msg_info "正在获取${jdk_name}的下载链接..."
         local download_url
         download_url=$(get_yijinglab_download_url "$client_key" "$jdk_name")
 
         if [[ -n $download_url ]]; then
             install_manual_jdk_package "$download_url" "$jdk_name" "$jdk_ver"
+            ret=$?
+        else
+            ret=1
         fi
     else
         msg_error "无效选择"
+        ret=1
     fi
 
     pop_path
-}
-
-install_oracle_from_injdk() {
-    push_path "www.injdk.cn"
-    show_section "从injdk安装OracleJDK"
-
-    local JDK_URLS=("https://d10.injdk.cn/openjdk/oraclejdk/8/jdk-8u421-linux-x64.tar.gz" "https://d10.injdk.cn/openjdk/oraclejdk/11/jdk-11.0.24_linux-x64_bin.tar.gz" "https://d10.injdk.cn/openjdk/oraclejdk/17/jdk-17_linux-x64_bin.tar.gz" "https://d10.injdk.cn/openjdk/oraclejdk/21/jdk-21_linux-x64_bin.tar.gz" "https://d10.injdk.cn/openjdk/oraclejdk/22/jdk-22_linux-x64_bin.tar.gz" "https://d10.injdk.cn/openjdk/oraclejdk/23/jdk-23_linux-x64_bin.tar.gz")
-
-    echo ""
-    show_submenu "OracleJDK版本选择" "${ORACLE_JDK_LABELS[@]}"
-    local version
-    msg_prompt "请选择版本 [1-6, 0返回, q退出]" "version"
-
-    if [[ $version == "q" || $version == "Q" ]]; then
-        exit 0
-    fi
-
-    if [[ $version == "0" ]]; then
-        pop_path
-        return 1
-    fi
-
-    if [[ $version =~ ^[0-9]+$ ]] && [[ $version -ge 1 && $version -le 6 ]]; then
-        local index=$((version - 1))
-        local jdk_ver=${ORACLE_JDK_VERSIONS[$index]}
-        local jdk_name=${ORACLE_JDK_NAMES[$index]}
-        local jdk_url=${JDK_URLS[$index]}
-
-        install_manual_jdk_package "$jdk_url" "$jdk_name" "$jdk_ver"
-    else
-        msg_error "无效选择"
-    fi
-
-    pop_path
+    return $ret
 }
 
 get_yijinglab_download_url() {
     local token="$1"
     local exe_name="$2"
-    local api_url='https://study.yijinglab.com/api/tools/oss/tempurl'
 
     local resp
     resp=$(curl -s -X POST \
         -H "Content-Type: application/json" \
         -d "{\"token\":\"$token\",\"tempUrl\":\"$exe_name\"}" \
-        "$api_url" 2>/dev/null)
+        "$YIJINGLAB_API_URL" 2>/dev/null)
 
     if [[ -z $resp ]]; then
         return 1
@@ -202,7 +236,6 @@ install_manual_jdk_package() {
     local url="$1"
     local filename="$2"
     local target_dir_name="$3"
-    local install_base="/usr/lib/jvm"
 
     [[ -f "$filename" ]] && rm -f "$filename"
 
@@ -215,12 +248,12 @@ install_manual_jdk_package() {
 
     msg_success "下载完成"
 
-    sudo mkdir -p "$install_base"
+    sudo mkdir -p "$JVM_INSTALL_BASE"
 
-    msg_info "正在解压安装到 $install_base/$target_dir_name"
-    [[ -d "$install_base/$target_dir_name" ]] && sudo rm -rf "$install_base/$target_dir_name"
+    msg_info "正在解压安装到 ${JVM_INSTALL_BASE}/${target_dir_name}"
+    [[ -d "$JVM_INSTALL_BASE/$target_dir_name" ]] && sudo rm -rf "$JVM_INSTALL_BASE/$target_dir_name"
 
-    if ! sudo tar -xzf "$filename" -C "$install_base"; then
+    if ! sudo tar -xzf "$filename" -C "$JVM_INSTALL_BASE"; then
         msg_error "解压失败"
         rm -f "$filename"
         return 1
@@ -228,13 +261,13 @@ install_manual_jdk_package() {
 
     rm -f "$filename"
 
-    configure_jdk_env "$install_base/$target_dir_name"
+    configure_jdk_env "$JVM_INSTALL_BASE/$target_dir_name"
 
-    msg_success "JDK $target_dir_name 安装并配置成功"
+    msg_success "JDK${target_dir_name}安装并配置成功"
 }
 
 # ═══════════════════════════════════════════════════════════════
-# OpenJDK 配置
+# OpenJDK配置
 # ═══════════════════════════════════════════════════════════════
 
 config_jdk_openjdk() {
@@ -243,14 +276,14 @@ config_jdk_openjdk() {
             "通过APT安装OpenJDK (推荐)" \
             "从华为主机镜像安装 (Legacy)"
 
-        local choice
+        local choice ret
         msg_prompt "请选择安装方式 [0-2, q退出]"
 
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) openjdk_apt_menu ;;
-            2) openjdk_mirror_menu ;;
+            1) openjdk_apt_menu; ret=$?; [[ $ret -eq 255 ]] && continue ;;
+            2) openjdk_mirror_menu; ret=$?; [[ $ret -eq 255 ]] && continue ;;
             *) msg_error "无效选择" ;;
         esac
         pause
@@ -289,11 +322,11 @@ openjdk_apt_menu() {
         done
 
         if [[ ${#available[@]} -eq 0 ]]; then
-            msg_error "仓库中未找到任何 openjdk-*-jdk 包"
+            msg_error "仓库中未找到任何openjdk-*-jdk包"
             return
         fi
 
-        show_submenu "OpenJDK (APT)" "${display_names[@]}"
+        show_submenu "OpenJDK(APT)" "${display_names[@]}"
 
         local choice
         msg_prompt "请选择版本 [0-${#available[@]}, q退出]"
@@ -303,7 +336,7 @@ openjdk_apt_menu() {
         fi
         
         if [[ $choice == "0" ]]; then
-            return
+            return 255
         fi
 
         if [[ $choice =~ ^[0-9]+$ ]] && [[ $choice -ge 1 && $choice -le ${#available[@]} ]]; then
@@ -313,12 +346,13 @@ openjdk_apt_menu() {
         else
             msg_error "无效选择"
         fi
+        pause
     done
 }
 
 openjdk_mirror_menu() {
     while true; do
-        show_submenu "OpenJDK (Mirror)" \
+        show_submenu "OpenJDK(Mirror)" \
             "OpenJDK 11.0.2" \
             "OpenJDK 17.0.2" \
             "OpenJDK 21.0.1" \
@@ -328,14 +362,16 @@ openjdk_mirror_menu() {
         local choice
         msg_prompt "请选择版本 [0-5, q退出]"
         case $choice in
-            0) return ;;
+            0) return 255 ;;
             q|Q) exit 0 ;;
             1) install_openjdk_mirror "11.0.2"; return ;;
             2) install_openjdk_mirror "17.0.2"; return ;;
             3) install_openjdk_mirror "21.0.1"; return ;;
             4) install_openjdk_mirror "22.0.2"; return ;;
             5) install_openjdk_mirror "23"; return ;;
+            *) msg_error "无效选择" ;;
         esac
+        pause
     done
 }
 
@@ -346,27 +382,28 @@ install_openjdk_apt() {
     local pkg_name="openjdk-${version}-jdk"
 
     if ! is_package_available "$pkg_name"; then
-        msg_error "软件包 $pkg_name 在当前系统的 APT 仓库中不可用。"
+        msg_error "软件包 $pkg_name 在当前系统的APT仓库中不可用。"
         msg_info "请尝试执行 'apt update' 更新软件源或检查您的系统版本是否支持该版本。"
         return 1
     fi
 
-    if install_package "$pkg_name"; then
+    install_package "$pkg_name"
+    if action "OpenJDK $version 安装成功" "安装失败"; then
         local jdk_path
-        jdk_path=$(find /usr/lib/jvm -name "java-${version}-*" -type d 2>/dev/null | grep -v "common" | head -1)
+        jdk_path=$(find "$JVM_INSTALL_BASE" -name "java-${version}-*" -type d 2>/dev/null | grep -v "common" | head -1)
         [[ -n $jdk_path ]] && configure_jdk_env "$jdk_path"
-        msg_success "OpenJDK $version 安装成功"
+        return 0
     else
-        msg_error "安装失败"
+        return 1
     fi
 }
 
 install_openjdk_mirror() {
     local version="$1"
-    show_section "从镜像安装OpenJDK $version"
+    show_section "从镜像安装OpenJDK ${version}"
 
     local filename="openjdk-${version}_linux-x64_bin.tar.gz"
-    local url="https://mirrors.huaweicloud.com/openjdk/${version}/${filename}"
+    local url="${OPENJDK_MIRROR_BASE}/${version}/${filename}"
     local jdk_ver="jdk-${version}"
 
     install_manual_jdk_package "$url" "$filename" "$jdk_ver"
@@ -378,33 +415,39 @@ install_openjdk_mirror() {
 
 configure_jdk_env() {
     local jdk_path="$1"
-    local env_file="/etc/profile.d/jdk.sh"
 
     msg_info "正在配置系统 Alternatives..."
-    local priority=100
-    
-    local binaries=("java" "javac" "keytool" "jar" "jarsigner")
-    for bin in "${binaries[@]}"; do
+    _register_jdk_alternatives "$jdk_path" 100
+
+    _write_jdk_env_file
+
+    export JAVA_HOME="$jdk_path"
+
+    msg_info "环境变量文件已更新: $JDK_ENV_FILE"
+}
+
+_register_jdk_alternatives() {
+    local jdk_path="$1" priority="$2"
+    local bin
+    for bin in "${JDK_BINARIES[@]}"; do
         if [[ -x "$jdk_path/bin/$bin" ]]; then
             sudo update-alternatives --install "/usr/bin/$bin" "$bin" "$jdk_path/bin/$bin" "$priority" >/dev/null 2>&1
             sudo update-alternatives --set "$bin" "$jdk_path/bin/$bin" >/dev/null 2>&1
         fi
     done
+}
 
-    cat > "$env_file" << 'EOF'
+_write_jdk_env_file() {
+    cat > "$JDK_ENV_FILE" << 'EOF'
 if [ -x /usr/bin/java ]; then
     export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")
     export CLASSPATH=.:$JAVA_HOME/lib
 fi
 EOF
-
-    export JAVA_HOME="$jdk_path"
-
-    msg_info "环境变量文件已更新: $env_file"
 }
 
 # ═══════════════════════════════════════════════════════════════
-# JDK 信息收集 (内部工具函数)
+# JDK信息收集(内部工具函数)
 # ═══════════════════════════════════════════════════════════════
 
 _collect_installed_jdks() {
@@ -419,8 +462,8 @@ _collect_installed_jdks() {
         current_java_path=$(readlink -f "$(command -v java)" 2>/dev/null | sed 's:/bin/java::')
     fi
 
-    if [[ -d /usr/lib/jvm ]]; then
-        for jdk_dir in /usr/lib/jvm/*; do
+    if [[ -d $JVM_INSTALL_BASE ]]; then
+        for jdk_dir in "$JVM_INSTALL_BASE"/*; do
             [[ -d $jdk_dir ]] || continue
             [[ -L $jdk_dir ]] && continue
 
@@ -507,7 +550,7 @@ _collect_installed_jdks() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# JDK 管理 - 查看已安装JDK
+# JDK管理 - 查看已安装JDK
 # ═══════════════════════════════════════════════════════════════
 
 _print_jdk_table() {
@@ -566,7 +609,7 @@ list_installed_jdk() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# JDK 管理 - 切换JDK版本
+# JDK管理 - 切换JDK版本
 # ═══════════════════════════════════════════════════════════════
 
 switch_jdk() {
@@ -610,7 +653,7 @@ switch_jdk() {
     local filtered=$((total_all - count))
     if [[ $filtered -gt 0 ]]; then
         echo ""
-        msg_info "已过滤${filtered}个不可切换的条目(JRE包、目录不完整等)"
+        msg_info "已过滤 ${filtered} 个不可切换的条目(JRE包、目录不完整等)"
     fi
 
     echo ""
@@ -637,7 +680,8 @@ switch_jdk() {
     done
 
     echo ""
-    msg_prompt "请选择要切换的JDK [1-${count}, 0取消]"
+    local choice
+    msg_prompt "请选择要切换的JDK [1-${count}, 0取消]" "choice"
 
     if [[ $choice == "0" || -z $choice ]]; then
         msg_info "已取消"
@@ -660,13 +704,13 @@ switch_jdk() {
 
     msg_info "正在切换到: ${BRIGHT_GREEN}${target_name}${NC} (${switchable_versions[$idx]})"
 
-    local binaries=("java" "javac" "keytool" "jar" "jarsigner")
     local switched=0
-    for bin in "${binaries[@]}"; do
+    local bin
+    for bin in "${JDK_BINARIES[@]}"; do
         if [[ -x "$target_path/bin/$bin" ]]; then
             sudo update-alternatives --install "/usr/bin/$bin" "$bin" "$target_path/bin/$bin" 200 2>/dev/null || true
             if sudo update-alternatives --set "$bin" "$target_path/bin/$bin" 2>/dev/null; then
-                ((switched++))
+                switched=$((switched + 1))
             fi
         fi
     done
@@ -676,18 +720,12 @@ switch_jdk() {
         return 1
     fi
 
-    local env_file="/etc/profile.d/jdk.sh"
-    cat > "$env_file" << 'EOF'
-if [ -x /usr/bin/java ]; then
-    export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:/bin/java::")
-    export CLASSPATH=.:$JAVA_HOME/lib
-fi
-EOF
+    _write_jdk_env_file
 
     export JAVA_HOME="$target_path"
 
     # shellcheck source=/dev/null
-    [[ -f "$env_file" ]] && source "$env_file"
+    [[ -f "$JDK_ENV_FILE" ]] && source "$JDK_ENV_FILE"
 
     echo ""
     msg_success "JDK已切换到: ${target_name}"
@@ -700,7 +738,7 @@ EOF
 }
 
 # ═══════════════════════════════════════════════════════════════
-# JDK 管理 - 删除JDK环境
+# JDK管理 - 删除JDK环境
 # ═══════════════════════════════════════════════════════════════
 
 remove_jdk() {
@@ -725,6 +763,7 @@ remove_jdk() {
     fi
 
     echo ""
+    local choice
     msg_prompt "请选择要删除的JDK [1-${count}, 0取消]"
 
     if [[ $choice == "0" || -z $choice ]]; then
@@ -758,17 +797,17 @@ remove_jdk() {
     else
         if [[ -d $target_path ]]; then
             if confirm "确定删除 ${target_name} (${target_path}) 并清理系统链接?"; then
-                local binaries=("java" "javac" "keytool" "jar" "jarsigner")
-                for bin in "${binaries[@]}"; do
+                local bin
+                for bin in "${JDK_BINARIES[@]}"; do
                     sudo update-alternatives --remove "$bin" "$target_path/bin/$bin" 2>/dev/null || true
                 done
 
                 sudo rm -rf "$target_path"
 
                 local remaining
-                remaining=$(find /usr/lib/jvm -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+                remaining=$(find "$JVM_INSTALL_BASE" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
                 if [[ $remaining -eq 0 ]]; then
-                    [[ -f /etc/profile.d/jdk.sh ]] && sudo rm -f /etc/profile.d/jdk.sh
+                    [[ -f "$JDK_ENV_FILE" ]] && sudo rm -f "$JDK_ENV_FILE"
                     msg_info "已清理环境变量文件 (无剩余JDK)"
                 fi
 

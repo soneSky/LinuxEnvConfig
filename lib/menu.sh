@@ -162,9 +162,7 @@ show_submenu() {
 
 handle_main_menu() {
     local choice="$1"
-    
-    [[ $choice == "q" || $choice == "Q" ]] && return 255
-    
+
     if ! [[ $choice =~ ^[0-9]+$ ]]; then
         msg_error "请输入有效的数字"
         pause

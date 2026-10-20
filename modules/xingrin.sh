@@ -20,8 +20,6 @@
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-set -euo pipefail
-
 # ═══════════════════════════════════════════════════════════════
 # 全局变量定义
 # ═══════════════════════════════════════════════════════════════
@@ -66,7 +64,7 @@ _init_xingrin_data() {
     cd "${docker_dir}" || return 1
     local prev_msg=""
     local lines_printed=0
-    sudo bash ./scripts/init-data.sh 2>&1 | while read -r line; do
+    sudo bash "${docker_dir}/scripts/init-data.sh" 2>&1 | while read -r line; do
         local status_msg=""
         if [[ "$line" =~ "等待 Server 服务" ]]; then
             status_msg="正在等待后台服务就绪..."
@@ -105,7 +103,7 @@ _init_xingrin_data() {
         prev_msg="$status_msg"
     done
     if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-        msg_warning "数据初始化脚本执行失败，请稍后手动运行:cd ${docker_dir} && sudo bash ./scripts/init-data.sh"
+        msg_warning "数据初始化脚本执行失败，请稍后手动运行:cd ${docker_dir} && sudo bash ${docker_dir}/scripts/init-data.sh"
     fi
 }
 
@@ -136,10 +134,7 @@ install_xingrin() {
     for cmd in git curl jq; do
         if ! command_exists "$cmd"; then
             msg_warning "系统未检测到${cmd},正在尝试自动安装..."
-            if command -v apt-get &>/dev/null; then
-                sudo apt-get update -y >/dev/null 2>&1
-                sudo apt-get install -y "$cmd" >/dev/null 2>&1
-            fi
+            install_packages "$cmd"
         fi
     done
 
@@ -166,15 +161,6 @@ install_xingrin() {
         msg_error "未找到 .env.example 模板文件，安装终止"
         return 1
     fi
-
-    update_env_var() {
-        local file="$1" key="$2" value="$3"
-        if grep -q "^$key=" "$file"; then
-            sudo sed -i "s|^$key=.*|$key=$value|" "$file"
-        else
-            echo "$key=$value" | sudo tee -a "$file" >/dev/null
-        fi
-    }
 
     if [[ ! -f "${docker_dir}/.env" ]]; then
         sudo cp "${docker_dir}/.env.example" "${docker_dir}/.env"
@@ -263,8 +249,8 @@ install_xingrin() {
     msg_info "正在预拉取核心镜像..."
     local worker_image="yyhuni/xingrin-worker:${app_version}"
     local server_image="yyhuni/xingrin-server:${app_version}"
-    docker_pull_image "$worker_image"
-    docker_pull_image "$server_image"
+    if ! docker_pull_image "$worker_image"; then return 1; fi
+    if ! docker_pull_image "$server_image"; then return 1; fi
 
     local templates_dir="/opt/xingrin/nuclei-repos/nuclei-templates"
     if [[ ! -d "${templates_dir}/.git" ]]; then
@@ -278,13 +264,9 @@ install_xingrin() {
     fi
 
     msg_info "正在启动XingRin容器编排堆栈..."
-    local -a COMPOSE_CMD=("${COMPOSE_CMD[@]}")
-    local env_db_host
-    env_db_host=$(grep -E "^DB_HOST=" "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "'"'") || env_db_host="postgres"
-    if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
-        COMPOSE_CMD+=(--profile local-db)
-    fi
-    docker_compose_start "${docker_dir}" "XingRin" "up" || return 1
+    local -a compose_args=()
+    read -ra compose_args <<< "$(_xingrin_profile_args "${docker_dir}")"
+    docker_compose_start "${docker_dir}" "XingRin" "up" "${compose_args[@]}" || return 1
 
     _init_xingrin_data "${docker_dir}"
 
@@ -295,60 +277,51 @@ install_xingrin() {
         "注意事项:请首次登录后立即修改默认密码！"
 }
 
+_xingrin_profile_args() {
+    local docker_dir="$1"
+    local env_db_host
+    env_db_host=$(grep -E "^DB_HOST=" "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "') || env_db_host="postgres"
+    if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
+        echo "--profile local-db"
+    fi
+}
+
+update_env_var() {
+    local file="$1" key="$2" value="$3"
+    if grep -q "^$key=" "$file"; then
+        sudo sed -i "s|^$key=.*|$key=$value|" "$file"
+    else
+        echo "$key=$value" | sudo tee -a "$file" >/dev/null
+    fi
+}
+
 remove_xingrin() {
     show_section "卸载XingRin"
-    check_docker_compose || return 1
-
-    local -a COMPOSE_CMD=("${COMPOSE_CMD[@]}")
-    if [[ -d "${XINGRIN_DIR}/docker" ]]; then
-        local env_db_host
-        env_db_host=$(grep -E "^DB_HOST=" "${XINGRIN_DIR}/docker/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "'"'") || env_db_host="postgres"
-        if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
-            COMPOSE_CMD+=(--profile local-db)
-        fi
-        msg_info "正在停止并清理容器资源..."
-        cd "${XINGRIN_DIR}/docker" || return 1
-        sudo "${COMPOSE_CMD[@]}" down -v >/dev/null 2>&1
-    fi
 
     local app_version="latest"
     if [[ -f "${XINGRIN_DIR}/VERSION" ]]; then
         app_version=$(cat "${XINGRIN_DIR}/VERSION" | tr -d '[:space:]')
     fi
 
-    if [[ -d "${XINGRIN_DIR}" ]]; then
-        if confirm "检测到XingRin数据和配置目录, 确定要完全卸载清理吗?"; then
-            cd ~ || return 1
-            sudo rm -rf "${XINGRIN_DIR}"
-            msg_success "物理环境清理完成"
-        fi
+    local -a remove_args=()
+    local profile_args
+    profile_args=$(_xingrin_profile_args "${XINGRIN_DIR}/docker")
+    if [[ -n "$profile_args" ]]; then
+        remove_args+=(--compose-args "$profile_args")
     fi
 
-    local images=(
-        "yyhuni/xingrin-worker:${app_version}"
-        "yyhuni/xingrin-server:${app_version}"
-        "postgres:15"
-        "redis:alpine"
-        "nginx:alpine"
+    docker_compose_remove "${XINGRIN_DIR}/docker" "XingRin" \
+        "${remove_args[@]}" \
+        "yyhuni/xingrin-worker:${app_version}" \
+        "yyhuni/xingrin-server:${app_version}" \
+        "postgres:15" \
+        "redis:alpine" \
+        "nginx:alpine" \
         "prefecthq/prefect:2.14-python3.10"
-    )
 
-    local image_exists=false
-    local img
-    for img in "${images[@]}"; do
-        if docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "${img}"; then
-            image_exists=true
-            break
-        fi
-    done
-
-    if [[ "$image_exists" == "true" ]]; then
-        if confirm "是否清理XingRin相关Docker镜像?"; then
-            msg_info "正在清理本地镜像..."
-            for img in "${images[@]}"; do
-                docker rmi "${img}" >/dev/null 2>&1 || true
-            done
-            msg_success "镜像清理完成"
+    if [[ -d "${XINGRIN_DIR}" ]]; then
+        if confirm "检测到XingRin数据和配置目录, 确定要删除吗?"; then
+            sudo rm -rf "${XINGRIN_DIR}"
         fi
     fi
 
@@ -358,16 +331,11 @@ remove_xingrin() {
 start_xingrin() {
     show_section "启动XingRin"
     local docker_dir="${XINGRIN_DIR}/docker"
-    check_docker_compose || return 1
 
-    local -a COMPOSE_CMD=("${COMPOSE_CMD[@]}")
-    local env_db_host
-    env_db_host=$(grep -E "^DB_HOST=" "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "'"'") || env_db_host="postgres"
-    if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
-        COMPOSE_CMD+=(--profile local-db)
-    fi
+    local -a compose_args=()
+    read -ra compose_args <<< "$(_xingrin_profile_args "${docker_dir}")"
 
-    docker_compose_start "${docker_dir}" "XingRin" "up" || return 1
+    docker_compose_start "${docker_dir}" "XingRin" "up" "${compose_args[@]}" || return 1
 
     _init_xingrin_data "${docker_dir}"
 
@@ -382,72 +350,25 @@ start_xingrin() {
 stop_xingrin() {
     show_section "停止XingRin"
     local docker_dir="${XINGRIN_DIR}/docker"
-    check_docker_compose || return 1
 
-    local -a COMPOSE_CMD=("${COMPOSE_CMD[@]}")
-    local env_db_host
-    env_db_host=$(grep -E "^DB_HOST=" "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "'"'") || env_db_host="postgres"
-    if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
-        COMPOSE_CMD+=(--profile local-db)
-    fi
+    local -a compose_args=()
+    read -ra compose_args <<< "$(_xingrin_profile_args "${docker_dir}")"
 
-    docker_compose_stop "${docker_dir}" "XingRin"
+    docker_compose_stop "${docker_dir}" "XingRin" "${compose_args[@]}"
 }
 
 show_xingrin_status() {
     show_section "XingRin状态信息"
     local docker_dir="${XINGRIN_DIR}/docker"
-    if [[ ! -d "$docker_dir" ]]; then
-        msg_error "未检测到安装目录"
-        return 1
-    fi
-    check_docker_compose || return 1
-    cd "$docker_dir" || return 1
 
-    local -a COMPOSE_CMD=("${COMPOSE_CMD[@]}")
-    local env_db_host
-    env_db_host=$(grep -E "^DB_HOST=" "${docker_dir}/.env" 2>/dev/null | cut -d'=' -f2 | tr -d ' "'"'") || env_db_host="postgres"
-    if [[ "$env_db_host" == "postgres" || "$env_db_host" == "localhost" || "$env_db_host" == "127.0.0.1" ]]; then
-        COMPOSE_CMD+=(--profile local-db)
-    fi
+    local -a compose_args=()
+    read -ra compose_args <<< "$(_xingrin_profile_args "${docker_dir}")"
 
-    local widths="18 12 10 18"
-    echo ""
-    msg_table_row "$widths" "${BOLD}服务名称" "运行状态" "健康状况" "端口映射${NC}"
-    draw_line "-" "${GRAY}"
-
-    local line
-    while read -r line; do
-        [[ -z "$line" ]] && continue
-        local service state health ports
-        IFS='|' read -r service state health ports <<< "$line"
-
-        local state_color="${NC}"
-        case "${state,,}" in
-            running) state_color="${GREEN}" ;;
-            exited|dead) state_color="${RED}" ;;
-            *) state_color="${YELLOW}" ;;
-        esac
-
-        local health_color="${NC}"
-        case "${health,,}" in
-            healthy) health_color="${GREEN}" ;;
-            unhealthy) health_color="${RED}" ;;
-            starting) health_color="${YELLOW}" ;;
-            *) health_color="${GRAY}" ;;
-        esac
-
-        local simple_ports
-        simple_ports=$(echo "$ports" | grep -oE "[0-9]+->[0-9]+" | head -n 1)
-        [[ -z "$simple_ports" ]] && simple_ports="-"
-
-        msg_table_row "$widths" "${CYAN}${service}${NC}" "${state_color}${state}${NC}" "${health_color}${health:- -}${NC}" "${WHITE}${simple_ports}${NC}"
-    done < <(sudo "${COMPOSE_CMD[@]}" ps --format "{{.Service}}|{{.State}}|{{.Health}}|{{.Ports}}" 2>/dev/null)
-    echo ""
+    show_compose_status_table "$docker_dir" "XingRin" "${compose_args[@]}"
 }
 
 # ═══════════════════════════════════════════════════════════════
 # 模块注册
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置XingRin" config_xingrin
+register_main_menu "配置XingRin" "config_xingrin"

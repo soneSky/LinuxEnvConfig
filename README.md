@@ -1,7 +1,7 @@
 # LinuxEnvConfig (LEC)
 
-[![Version](https://img.shields.io/badge/Version-2.0.0-brightgreen.svg)](https://github.com/yijinglab/LinuxEnvConfig)
-[![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Kali-blue.svg)](https://github.com/yijinglab/LinuxEnvConfig)
+[![Version](https://img.shields.io/badge/Version-2.1.0-brightgreen.svg)](https://gitee.com/yijingsec/LinuxEnvConfig)
+[![Platform](https://img.shields.io/badge/Platform-Ubuntu%20%7C%20Kali-blue.svg)](https://gitee.com/yijingsec/LinuxEnvConfig)
 [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg)](http://www.apache.org/licenses/LICENSE-2.0)
 
 Ubuntu/Kali Linux基础环境与安全工具自动化配置脚本。项目已完全重构为全新的 **v2.0模块化架构**，提供了更优雅的交互体验与更便捷的扩展机制。
@@ -18,12 +18,12 @@ Ubuntu/Kali Linux基础环境与安全工具自动化配置脚本。项目已完
 
 使用 `curl` 命令：
 ```bash
-curl -sSL https://github.com/yijinglab/LinuxEnvConfig/raw/master/install.sh | sudo bash
+curl -sSL https://gitee.com/yijingsec/LinuxEnvConfig/raw/master/install.sh | sudo bash
 ```
 
 或者使用 `wget` 命令：
 ```bash
-wget -qO- https://github.com/yijinglab/LinuxEnvConfig/raw/master/install.sh | sudo bash
+wget -qO- https://gitee.com/yijingsec/LinuxEnvConfig/raw/master/install.sh | sudo bash
 ```
 
 ### 方式二：本地克隆运行
@@ -31,7 +31,7 @@ wget -qO- https://github.com/yijinglab/LinuxEnvConfig/raw/master/install.sh | su
 如果您想把项目克隆到本地直接运行：
 
 ```bash
-git clone https://github.com/yijinglab/LinuxEnvConfig.git
+git clone https://gitee.com/yijingsec/LinuxEnvConfig.git
 cd LinuxEnvConfig
 sudo bash main.sh
 ```
@@ -60,7 +60,7 @@ sudo bash main.sh
 
 ```bash
 # 克隆 v1 分支代码
-git clone -b v1 https://github.com/yijinglab/LinuxEnvConfig.git
+git clone -b v1 https://gitee.com/yijingsec/LinuxEnvConfig.git
 
 # 运行单体配置脚本
 cd LinuxEnvConfig
@@ -268,6 +268,61 @@ install_custom() {
 
 # 注册到主菜单中
 register_main_menu "配置Custom" "config_custom"
+```
+
+---
+
+## 🛠 开发者指南
+
+### 质量检查命令
+
+```bash
+make lint      # shellcheck静态检查(要求0告警)
+make syntax    # bash -n语法检查全部脚本
+make test      # bats单元测试(tests/目录,覆盖lib层纯函数)
+make check     # 以上全部
+```
+
+推送前请确保`make check`全绿;Gitee Go流水线(`.workflow/`)会在push到master时自动执行。
+
+### 核心API速查(lib/)
+
+| 函数 | 位置 | 用途 |
+|------|------|------|
+| `docker_deploy_container` | lib/utils.sh | 一步完成拉取→清理→创建→健康等待 |
+| `docker_confirm_reinstall` | lib/utils.sh | 重装前检测已有容器并确认 |
+| `docker_pull_image`/`docker_stop_container`/`docker_start_container`/`docker_remove_container_and_image` | lib/utils.sh | 容器生命周期 |
+| `docker_compose_start`/`stop`/`remove` | lib/utils.sh | Compose生命周期,支持透传额外参数(`--compose-args`) |
+| `show_compose_status_table` | lib/utils.sh | 统一的compose服务状态表 |
+| `install_packages`/`purge_package`/`remove_package` | lib/utils.sh | APT包管理(带进度条) |
+| `prompt_host_ip`/`prompt_host_port` | lib/io.sh | 部署参数交互(写入调用方命名变量) |
+| `show_access_info`/`msg_*`/`ui_*` | lib/utils.sh、lib/common.sh | 统一输出风格 |
+
+约定:
+- **返回码语义**:子菜单中`0`表示返回上级,`q/Q`表示退出程序,嵌套层的"取消"用`return 255`冒泡——主循环会安全忽略255,无需各处手工拦截。
+- **stdout/stderr**:UI输出(`msg_*`等)一律走stderr,stdout仅承载函数返回值。
+- **中英文混排**:用户可见字符串中,中文与英文/数字之间不加空格。
+- **镜像引用**:统一收敛为模块顶部`readonly`常量,迁移规划见[docs/IMAGE_REGISTRY_MIGRATION.md](docs/IMAGE_REGISTRY_MIGRATION.md)。
+
+---
+
+## 🚑 故障排查
+
+### 脚本异常退出无提示?
+
+v2.1.0起内置错误诊断机制:脚本因未预期错误退出时,会自动把**失败命令、精确位置(文件:行号)、完整函数调用栈**追加到`/var/log/lec/error.log`,并在终端打印指引:
+
+```bash
+tail -50 /var/log/lec/error.log
+```
+
+### 复现问题需要完整输出?
+
+使用调试模式运行,全部输出(带时间戳)会镜像到`/var/log/lec/debug-<时间戳>.log`:
+
+```bash
+lec --debug          # 或
+sudo LEC_DEBUG=1 bash main.sh
 ```
 
 ---

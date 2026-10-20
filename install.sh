@@ -29,15 +29,11 @@ readonly RED=$'\033[31m'
 readonly GREEN=$'\033[32m'
 readonly YELLOW=$'\033[33m'
 readonly BLUE=$'\033[34m'
-readonly CYAN=$'\033[36m'
 readonly WHITE=$'\033[37m'
 readonly GRAY=$'\033[90m'
-readonly BRIGHT_RED=$'\033[91m'
 readonly BRIGHT_GREEN=$'\033[92m'
-readonly BRIGHT_YELLOW=$'\033[93m'
 readonly BRIGHT_WHITE=$'\033[97m'
 readonly NC=$'\033[0m'
-readonly BOLD=$'\033[1m'
 
 msg_info()    { echo -e "  ${BLUE}[INFO]${NC} $1"; }
 msg_error()   { echo -e "  ${RED}[FAIL]${NC} $1" >&2; }
@@ -109,7 +105,7 @@ else
         rm -rf "$INSTALL_DIR"
     fi
     msg_info "正在从远程仓库克隆项目代码..."
-    git clone https://github.com/yijinglab/LinuxEnvConfig.git "$INSTALL_DIR" 2>&1 | sed 's/^/  /'
+    git clone https://gitee.com/yijingsec/LinuxEnvConfig.git "$INSTALL_DIR" 2>&1 | sed 's/^/  /'
 fi
 
 msg_info "正在创建全局命令: ${BRIGHT_WHITE}${BIN_PATH}${NC} ..."

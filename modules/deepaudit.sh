@@ -20,8 +20,6 @@
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-set -euo pipefail
-
 # ═══════════════════════════════════════════════════════════════
 # 全局变量定义
 # ═══════════════════════════════════════════════════════════════
@@ -30,8 +28,8 @@ readonly DEEPAUDIT_DIR="/opt/DeepAudit"
 readonly DEEPAUDIT_IMAGE_BACKEND="ghcr.nju.edu.cn/lintsinghua/deepaudit-backend:latest"
 readonly DEEPAUDIT_IMAGE_FRONTEND="ghcr.nju.edu.cn/lintsinghua/deepaudit-frontend:latest"
 readonly DEEPAUDIT_IMAGE_SANDBOX="ghcr.nju.edu.cn/lintsinghua/deepaudit-sandbox:latest"
-readonly DEEPAUDIT_DB="docker.gh-proxy.org/docker.io/postgres:15-alpine"
-readonly DEEPAUDIT_REDIS="docker.gh-proxy.org/docker.io/redis:7-alpine"
+readonly DEEPAUDIT_DB="swr.cn-south-1.myhuaweicloud.com/mingy/postgres:15-alpine"
+readonly DEEPAUDIT_REDIS="swr.cn-south-1.myhuaweicloud.com/mingy/redis:7-alpine"
 readonly DEEPAUDIT_DEFAULT_PORT="3000"
 
 # ═══════════════════════════════════════════════════════════════
@@ -110,10 +108,10 @@ install_deepaudit() {
     fi
 
     msg_info "正在生成Compose部署文件..."
-    sudo tee docker-compose.yml >/dev/null << 'EOF'
+    sudo tee docker-compose.yml >/dev/null << EOF
 services:
   db:
-    image: docker.gh-proxy.org/docker.io/postgres:15-alpine
+    image: ${DEEPAUDIT_DB}
     restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -130,7 +128,7 @@ services:
       - deepaudit-network
 
   redis:
-    image: docker.gh-proxy.org/docker.io/redis:7-alpine
+    image: ${DEEPAUDIT_REDIS}
     restart: unless-stopped
     volumes:
       - redis_data:/data
@@ -143,11 +141,11 @@ services:
       - deepaudit-network
 
   backend:
-    image: ghcr.nju.edu.cn/lintsinghua/deepaudit-backend:latest
+    image: ${DEEPAUDIT_IMAGE_BACKEND}
     restart: unless-stopped
     volumes:
       - backend_uploads:/app/uploads
-      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+      - \${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
     ports:
       - "8000:8000"
     environment:
@@ -155,11 +153,11 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - AGENT_ENABLED=true
       - SANDBOX_ENABLED=true
-      - SANDBOX_IMAGE=ghcr.nju.edu.cn/lintsinghua/deepaudit-sandbox:latest
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
-      - LLM_API_KEY=${LLM_API_KEY:-your-api-key-here}
-      - LLM_BASE_URL=${LLM_BASE_URL:-}
+      - SANDBOX_IMAGE=${DEEPAUDIT_IMAGE_SANDBOX}
+      - LLM_PROVIDER=\${LLM_PROVIDER:-openai}
+      - LLM_MODEL=\${LLM_MODEL:-gpt-4o}
+      - LLM_API_KEY=\${LLM_API_KEY:-your-api-key-here}
+      - LLM_BASE_URL=\${LLM_BASE_URL:-}
       - HTTP_PROXY=
       - HTTPS_PROXY=
       - NO_PROXY=*
@@ -174,7 +172,7 @@ services:
       - deepaudit-network
 
   db-migrate:
-    image: ghcr.nju.edu.cn/lintsinghua/deepaudit-backend:latest
+    image: ${DEEPAUDIT_IMAGE_BACKEND}
     restart: "no"
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/deepaudit
@@ -186,10 +184,10 @@ services:
       - deepaudit-network
 
   frontend:
-    image: ghcr.nju.edu.cn/lintsinghua/deepaudit-frontend:latest
+    image: ${DEEPAUDIT_IMAGE_FRONTEND}
     restart: unless-stopped
     ports:
-      - "${DEEPAUDIT_PORT:-3000}:80"
+      - "\${DEEPAUDIT_PORT:-3000}:80"
     environment:
       - HTTP_PROXY=
       - HTTPS_PROXY=
@@ -202,7 +200,7 @@ services:
       - deepaudit-network
 
   sandbox-pull:
-    image: ghcr.nju.edu.cn/lintsinghua/deepaudit-sandbox:latest
+    image: ${DEEPAUDIT_IMAGE_SANDBOX}
     restart: "no"
     command: echo "Sandbox image ready"
 
@@ -226,15 +224,14 @@ DEEPAUDIT_PORT=${host_port}
 DOCKER_SOCKET=${docker_socket}
 EOF
 
-    docker_pull_image "${DEEPAUDIT_DB}"
-    docker_pull_image "${DEEPAUDIT_REDIS}"
-    docker_pull_image "${DEEPAUDIT_IMAGE_BACKEND}"
-    docker_pull_image "${DEEPAUDIT_IMAGE_FRONTEND}"
-    docker_pull_image "${DEEPAUDIT_IMAGE_SANDBOX}"
+    if ! docker_pull_image "${DEEPAUDIT_DB}"; then return 1; fi
+    if ! docker_pull_image "${DEEPAUDIT_REDIS}"; then return 1; fi
+    if ! docker_pull_image "${DEEPAUDIT_IMAGE_BACKEND}"; then return 1; fi
+    if ! docker_pull_image "${DEEPAUDIT_IMAGE_FRONTEND}"; then return 1; fi
+    if ! docker_pull_image "${DEEPAUDIT_IMAGE_SANDBOX}"; then return 1; fi
 
     msg_info "正在启动DeepAudit服务..."
-    sudo "${COMPOSE_CMD[@]}" up -d >/dev/null 2>&1
-    if action "容器编排指令执行完成" "服务启动失败"; then
+    if docker_compose_start "${DEEPAUDIT_DIR}" "DeepAudit" "up"; then
         local masked_api_key="***"
         if [[ ${#llm_api_key} -gt 6 ]]; then
             masked_api_key="${llm_api_key:0:3}***${llm_api_key: -3}"
@@ -321,50 +318,11 @@ stop_deepaudit() {
 
 show_deepaudit_status() {
     show_section "DeepAudit状态信息"
-    if [[ ! -d "${DEEPAUDIT_DIR}" ]]; then
-        msg_error "未检测到安装目录"
-        return 1
-    fi
-    check_docker_compose || return 1
-    cd "${DEEPAUDIT_DIR}" || return 1
-    
-    local widths="18 12 10 18"
-    echo ""
-    msg_table_row "$widths" "${BOLD}服务名称" "运行状态" "健康状况" "端口映射${NC}"
-    draw_line "-" "${GRAY}"
-    
-    local line
-    while read -r line; do
-        [[ -z "$line" ]] && continue
-        local service state health ports
-        IFS='|' read -r service state health ports <<< "$line"
-        
-        local state_color="${NC}"
-        case "${state,,}" in
-            running) state_color="${GREEN}" ;;
-            exited|dead) state_color="${RED}" ;;
-            *) state_color="${YELLOW}" ;;
-        esac
-        
-        local health_color="${NC}"
-        case "${health,,}" in
-            healthy) health_color="${GREEN}" ;;
-            unhealthy) health_color="${RED}" ;;
-            starting) health_color="${YELLOW}" ;;
-            *) health_color="${GRAY}" ;;
-        esac
-        
-        local simple_ports
-        simple_ports=$(echo "$ports" | grep -oE "[0-9]+->[0-9]+" | head -n 1)
-        [[ -z "$simple_ports" ]] && simple_ports="-"
-
-        msg_table_row "$widths" "${CYAN}${service}${NC}" "${state_color}${state}${NC}" "${health_color}${health:- -}${NC}" "${WHITE}${simple_ports}${NC}"
-    done < <(sudo "${COMPOSE_CMD[@]}" ps --format "{{.Service}}|{{.State}}|{{.Health}}|{{.Ports}}" 2>/dev/null)
-    echo ""
+    show_compose_status_table "${DEEPAUDIT_DIR}" "DeepAudit"
 }
 
 # ═══════════════════════════════════════════════════════════════
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置DeepAudit" config_deepaudit
+register_main_menu "配置DeepAudit" "config_deepaudit"

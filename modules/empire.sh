@@ -67,33 +67,26 @@ install_empire() {
     check_docker || return 1
     show_section "安装Empire框架"
 
+    docker_confirm_reinstall "${EMPIRE_CONTAINER}" "Empire" || return 0
+
     local host_ip
     prompt_host_ip "Empire" || return 1
 
-    if ! docker_pull_image "${EMPIRE_IMAGE}"; then
-        return 1
-    fi
-
-    msg_info "正在启动容器服务..."
-    docker rm -f "${EMPIRE_CONTAINER}" >/dev/null 2>&1
-    
-    docker run -d \
-        --name "${EMPIRE_CONTAINER}" \
+    if ! docker_deploy_container "${EMPIRE_IMAGE}" "${EMPIRE_CONTAINER}" "Empire" \
+        "启动服务失败, 请检查端口 1337 是否被占用" \
         -p 6000-6010:6000-6010 \
         -p 1337:1337 \
         -p 5000:5000 \
-        --restart always \
-        "${EMPIRE_IMAGE}" >/dev/null 2>&1
-        
-    if action "Empire容器创建成功" "启动服务失败, 请检查端口 1337 是否被占用"; then
-        docker_wait_healthy "${EMPIRE_CONTAINER}" "Empire"
-        msg_success "Empire部署完成"
-        show_access_info \
-            "服务端地址: http://${host_ip}:1337" \
-            "默认用户名: empireadmin" \
-            "默认密码  : password123" \
-            "监听器范围: 6000-6010 (需在Empire中手动开启)"
+        --restart always; then
+        return 1
     fi
+
+    msg_success "Empire部署完成"
+    show_access_info \
+        "服务端地址: http://${host_ip}:1337" \
+        "默认用户名: empireadmin" \
+        "默认密码  : password123" \
+        "监听器范围: 6000-6010 (需在Empire中手动开启)"
 }
 
 # ═══════════════════════════════════════════════════════════════

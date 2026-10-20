@@ -62,7 +62,7 @@ config_apt() {
 # 镜像配置
 # ═══════════════════════════════════════════════════════════════
 
-declare -A APT_MIRRORS=(
+declare -gA APT_MIRRORS=(
     [aliyun]="https://mirrors.aliyun.com"
     [tencent]="https://mirrors.cloud.tencent.com"
     [huawei]="https://repo.huaweicloud.com"
@@ -185,7 +185,7 @@ apply_apt_config() {
 auto_select_mirror() {
     show_section "自动选择最快镜像"
 
-    if ! check_network_connection; then
+    if ! check_ip_connectivity; then
         msg_error "网络连接失败，无法进行速度测试"
         return 1
     fi
@@ -208,6 +208,7 @@ auto_select_mirror() {
 
 manage_apt_backups() {
     local _APT_FILE="/etc/apt/sources.list"
+    local choice
     while true; do
         show_submenu "APT备份管理" \
             "恢复历史备份" \
@@ -219,8 +220,8 @@ manage_apt_backups() {
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) restore_selected_apt ;;
-            2) delete_selected_apt ;;
+            1) restore_selected_apt; [[ $? -eq 255 ]] && continue ;;
+            2) delete_selected_apt; [[ $? -eq 255 ]] && continue ;;
             3) backup_clear_all "APT源" "$_APT_FILE" ;;
             *) msg_error "无效选择" ;;
         esac
@@ -230,7 +231,7 @@ manage_apt_backups() {
 
 restore_selected_apt() {
     local _APT_FILE="/etc/apt/sources.list"
-    if ! backup_select "恢复APT历史备份" "$_APT_FILE" "APT"; then return; fi
+    backup_select "恢复APT历史备份" "$_APT_FILE" "APT" || return $?
 
     backup_preview "$_SELECTED_BACKUP" "^deb"
 
@@ -246,7 +247,7 @@ restore_selected_apt() {
 
 delete_selected_apt() {
     local _APT_FILE="/etc/apt/sources.list"
-    if ! backup_select "删除APT历史备份" "$_APT_FILE" "APT"; then return; fi
+    backup_select "删除APT历史备份" "$_APT_FILE" "APT" || return $?
 
     if confirm "确定要彻底删除此备份文件吗?"; then
         rm -f "$_SELECTED_BACKUP"

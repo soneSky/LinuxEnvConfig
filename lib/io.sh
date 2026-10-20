@@ -28,7 +28,11 @@
 read_password() {
     local prompt="$1"
     local var_name="$2"
-    read -r -sp "  ${GREEN}->${NC} ${prompt}: " "${var_name?}"
+    if ! read -r -sp "  ${GREEN}->${NC} ${prompt}: " "${var_name?}"; then
+        printf "\n" >&2
+        msg_warning "输入流已结束(EOF), 程序安全退出"
+        exit 0
+    fi
     echo ""
 }
 
@@ -37,7 +41,11 @@ confirm() {
     local response
 
     while true; do
-        read -r -p "  [ ${MAGENTA}??${NC} ] ${BOLD}${WHITE}${prompt}${NC} [y/N]: " response
+        if ! read -r -p "  [ ${MAGENTA}??${NC} ] ${BOLD}${WHITE}${prompt}${NC} [y/N]: " response; then
+            printf "\n" >&2
+            msg_warning "输入流已结束(EOF), 程序安全退出"
+            exit 0
+        fi
         case "$response" in
             [Yy]*|[Yy][Ee][Ss]) return 0 ;;
             [Nn]*|[Nn][Oo]|"") return 1 ;;
@@ -71,4 +79,38 @@ validate_port() {
         msg_error "请输入有效的端口号(1-65535)"
         return 1
     fi
+}
+
+# ═══════════════════════════════════════════════════════════════
+# 部署参数交互
+# ═══════════════════════════════════════════════════════════════
+
+prompt_host_ip() {
+    local label="${1:-服务}" var_name="${2:-host_ip}" do_validate="${3:-true}"
+    local default_ip
+    default_ip=$(get_best_ip)
+    local input_val
+    if ! read -r -p "  ${CYAN}请输入启动${label}的主机地址 [${default_ip}]: ${NC}" input_val; then
+        printf "\n" >&2
+        msg_warning "输入流已结束(EOF), 程序安全退出"
+        exit 0
+    fi
+    input_val="${input_val:-$default_ip}"
+    if [[ "$do_validate" == "true" ]]; then
+        validate_ip "$input_val" || return 1
+    fi
+    printf -v "$var_name" "%s" "$input_val"
+}
+
+prompt_host_port() {
+    local label="${1:-服务}" default_port="$2" var_name="${3:-host_port}"
+    local input_val
+    if ! read -r -p "  ${CYAN}请输入${label}映射端口 [${default_port}]: ${NC}" input_val; then
+        printf "\n" >&2
+        msg_warning "输入流已结束(EOF), 程序安全退出"
+        exit 0
+    fi
+    input_val="${input_val:-$default_port}"
+    validate_port "$input_val" || return 1
+    printf -v "$var_name" "%s" "$input_val"
 }

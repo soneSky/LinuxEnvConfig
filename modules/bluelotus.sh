@@ -66,29 +66,22 @@ install_bluelotus() {
     check_docker || return 1
     show_section "安装BlueLotus框架"
 
+    docker_confirm_reinstall "${BLUELOTUS_CONTAINER}" "BlueLotus" || return 0
+
     local host_ip
     prompt_host_ip "BlueLotus" || return 1
 
-    if ! docker_pull_image "${BLUELOTUS_IMAGE}"; then
+    if ! docker_deploy_container "${BLUELOTUS_IMAGE}" "${BLUELOTUS_CONTAINER}" "BlueLotus" \
+        "启动服务失败, 请检查端口 ${BLUELOTUS_PORT} 是否被占用" \
+        -it -p "${BLUELOTUS_PORT}:80" \
+        --restart always; then
         return 1
     fi
 
-    msg_info "正在启动容器服务..."
-    docker rm -f "${BLUELOTUS_CONTAINER}" >/dev/null 2>&1
-    
-    docker run -dit \
-        -p "${BLUELOTUS_PORT}:80" \
-        --name "${BLUELOTUS_CONTAINER}" \
-        --restart always \
-        "${BLUELOTUS_IMAGE}" >/dev/null 2>&1
-        
-    if action "BlueLotus容器创建成功" "启动服务失败, 请检查端口 ${BLUELOTUS_PORT} 是否被占用"; then
-        docker_wait_healthy "${BLUELOTUS_CONTAINER}" "BlueLotus"
-        msg_success "BlueLotus部署完成"
-        show_access_info \
-            "访问地址:http://${host_ip}:${BLUELOTUS_PORT}/login.php" \
-            "默认密码:bluelotus"
-    fi
+    msg_success "BlueLotus部署完成"
+    show_access_info \
+        "访问地址:http://${host_ip}:${BLUELOTUS_PORT}/login.php" \
+        "默认密码:bluelotus"
 }
 
 # ═══════════════════════════════════════════════════════════════

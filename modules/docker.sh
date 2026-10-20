@@ -33,6 +33,7 @@ is_docker_installed() {
 # ═══════════════════════════════════════════════════════════════
 
 config_docker() {
+    local choice ret
     while true; do
         show_submenu "Docker管理" \
             "安装Docker系统" \
@@ -53,17 +54,17 @@ config_docker() {
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) install_docker ;;
+            1) install_docker; [[ $? -eq 255 ]] && continue ;;
             2) remove_docker ;;
-            3) push_path "配置镜像加速"; config_docker_mirror; pop_path; continue ;;
+            3) push_path "配置镜像加速"; config_docker_mirror; ret=$?; pop_path; [[ $ret -eq 255 ]] && continue ;;
             4) get_docker_mirror_config ;;
             5) unconfigure_docker_mirror ;;
-            6) push_path "配置网络代理"; config_docker_proxy; pop_path; continue ;;
+            6) push_path "配置网络代理"; config_docker_proxy; ret=$?; pop_path; [[ $ret -eq 255 ]] && continue ;;
             7) get_docker_proxy_config ;;
             8) unconfigure_docker_proxy ;;
             9) pull_docker_image_smart ;;
             10) show_docker_status ;;
-            11) install_docker_compose_standalone ;;
+            11) install_docker_compose_standalone; [[ $? -eq 255 ]] && continue ;;
             12) remove_docker_compose_standalone ;;
             *) msg_error "无效选择" ;;
         esac
@@ -95,7 +96,7 @@ install_docker() {
 
     local choice
     msg_prompt "请选择安装源 [0-6, q退出]"
-    [[ $choice == "0" ]] && return 0
+    [[ $choice == "0" ]] && return 255
     [[ $choice == "q" || $choice == "Q" ]] && exit 0
 
     local mirror_url
@@ -206,11 +207,9 @@ config_docker_mirror() {
     local mirrors=(
         "https://docker.m.daocloud.io"
         "https://docker.1ms.run"
-        "https://docker.gh-proxy.org"
         "https://docker.xuanyuan.me"
         "https://dockerproxy.net"
         "https://hub.rat.dev"
-        "https://docker.m.ixdev.cn"
     )
 
     msg_info "正在检测镜像源可用性(请稍候)..."
@@ -248,7 +247,6 @@ config_docker_mirror() {
     restart_service docker
     if action "镜像配置已生效(共配置${#available_mirrors[@]}个源)" "Docker重启失败，请检查配置"; then
         get_docker_mirror_config
-        pause
     fi
 }
 
@@ -290,7 +288,7 @@ config_docker_proxy() {
 
     local type
     msg_prompt "请选择协议 [0-2]" "type"
-    [[ $type == "0" ]] && return 0
+    [[ $type == "0" ]] && return 255
 
     local proxy_proto="http"
     [[ $type == "2" ]] && proxy_proto="socks5"
@@ -300,7 +298,6 @@ config_docker_proxy() {
 
     if [[ -z $proxy_addr ]]; then
         msg_error "代理地址不能为空"
-        pause
         return 1
     fi
 
@@ -315,11 +312,10 @@ Environment="HTTPS_PROXY=$proxy_url"
 Environment="NO_PROXY=localhost,127.0.0.1"
 EOF
 
-    systemctl daemon-reload
+    systemctl_reload
     restart_service docker
     if action "代理配置已生效: $proxy_url" "Docker重启失败"; then
         get_docker_proxy_config
-        pause
     fi
 }
 
@@ -338,7 +334,7 @@ unconfigure_docker_proxy() {
     local config="/etc/systemd/system/docker.service.d/proxy.conf"
     if [[ -f "$config" ]]; then
         rm -f "$config"
-        systemctl daemon-reload
+        systemctl_reload
         restart_service docker
         msg_success "代理配置已清除"
     else
@@ -435,7 +431,7 @@ install_docker_compose_standalone() {
 
     local choice
     msg_prompt "请选择安装源 [0-2]"
-    [[ $choice == "0" ]] && return 0
+    [[ $choice == "0" ]] && return 255
 
     local url
     if [[ $choice == "1" ]]; then
@@ -499,7 +495,7 @@ show_docker_status() {
     containers_running=$(docker ps -q 2>/dev/null | wc -l)
     containers_total=$(docker ps -aq 2>/dev/null | wc -l)
     images_count=$(docker images -q 2>/dev/null | wc -l)
-    disk_usage=$(docker system df 2>/dev/null | grep "Total" -A 1 | tail -n 1 | awk '{print $4}')
+    disk_usage=$(docker system df --format "{{.Size}}" 2>/dev/null | head -n 1)
 
     echo ""
     echo -e "  ${BRIGHT_CYAN}📦 版本信息${NC}"

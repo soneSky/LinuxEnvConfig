@@ -31,7 +31,7 @@ set -euo pipefail
 # ANSI终端颜色定义
 # ═══════════════════════════════════════════════════════════════
 
-declare -A COLORS=(
+declare -gA COLORS=(
     [reset]=$'\033[0m'
     [clear]=$'\033[0m'
 
@@ -114,11 +114,15 @@ msg_success() { echo -e "  ${GREEN}[ OK ]${NC} $1" >&2; }
 msg_warning() { echo -e "  ${YELLOW}[WARN]${NC} $1" >&2; }
 msg_question() { echo -e "  [ ${MAGENTA}??${NC} ] $1" >&2; }
 msg_star() { echo -e "  ${BRIGHT_YELLOW}*${NC} $1" >&2; }
-msg_prompt() {  
+msg_prompt() {
     local prompt_text="$1"
     local target_var="${2:-choice}"
     local _input_val=""
-    read -r -p "  ${BRIGHT_MAGENTA}➤${NC} ${BRIGHT_CYAN}${prompt_text}: ${NC}" _input_val
+    if ! read -r -p "  ${BRIGHT_MAGENTA}➤${NC} ${BRIGHT_CYAN}${prompt_text}: ${NC}" _input_val; then
+        printf "\n" >&2
+        msg_warning "输入流已结束(EOF), 程序安全退出"
+        exit 0
+    fi
     printf -v "$target_var" "%s" "$_input_val"
 }
 
@@ -374,7 +378,11 @@ clear_screen() {
 pause() {
     local msg="${1:-按任意键继续...}"
     echo "" >&2
-    read -r -n 1 -p "  ${WHITE}${msg}${NC}"
+    if ! read -r -n 1 -p "  ${WHITE}${msg}${NC}"; then
+        printf "\n" >&2
+        msg_warning "输入流已结束(EOF), 程序安全退出"
+        exit 0
+    fi
     echo "" >&2
 }
 

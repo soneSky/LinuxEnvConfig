@@ -25,7 +25,7 @@
 # 全局变量定义
 # ═══════════════════════════════════════════════════════════════
 
-readonly DNSCAT2_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/dnscat2:v0.07"
+readonly DNSCAT2_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/dnscat2:v0.17"
 readonly DNSCAT2_CONTAINER="dnscat2"
 
 # ═══════════════════════════════════════════════════════════════
@@ -62,7 +62,7 @@ config_dnscat2() {
 # ═══════════════════════════════════════════════════════════════
 
 install_dnscat2() {
-    unlock_dns_port
+    unlock_dns_port || return 1
 
     check_docker || return 1
     show_section "安装dnscat2框架"
@@ -76,10 +76,10 @@ install_dnscat2() {
 # ═══════════════════════════════════════════════════════════════
 
 start_dnscat2_direct_mode() {
-    unlock_dns_port
+    unlock_dns_port || return 1
 
     show_section "启动dnscat2 (直连模式)"
-    
+
     if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "${DNSCAT2_IMAGE}"; then
         msg_error "未检测到镜像, 请先执行安装"
         return 1
@@ -90,7 +90,7 @@ start_dnscat2_direct_mode() {
 
     msg_warning "注意: 直连模式将占用主机 UDP 53 端口"
     msg_info "正在进入交互式控制台(按 Ctrl+C 退出)..."
-    
+
     docker run -it \
         --name "${DNSCAT2_CONTAINER}" \
         --rm \
@@ -103,10 +103,10 @@ start_dnscat2_direct_mode() {
 # ═══════════════════════════════════════════════════════════════
 
 start_dnscat2_relay_mode() {
-    unlock_dns_port
+    unlock_dns_port || return 1
 
     show_section "启动dnscat2 (中继模式)"
-    
+
     if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "${DNSCAT2_IMAGE}"; then
         msg_error "未检测到镜像, 请先执行安装"
         return 1

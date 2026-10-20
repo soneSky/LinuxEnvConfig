@@ -27,14 +27,23 @@ set -euo pipefail
 # 版本与项目信息
 # ═══════════════════════════════════════════════════════════════
 
-readonly SCRIPT_VERSION="2.0.0"
+readonly SCRIPT_VERSION="2.1.0"
 readonly SCRIPT_NAME="LinuxEnvConfig"
+readonly REQUIRED_TOOLS=("curl" "wget" "git" "jq" "unzip")
 
 # ═══════════════════════════════════════════════════════════════
-# 路径初始化
+# 路径初始化与启动参数
 # ═══════════════════════════════════════════════════════════════
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+LEC_DEBUG="${LEC_DEBUG:-0}"
+export LEC_START_ARGS="$*"
+for arg in "$@"; do
+    if [[ "$arg" == "--debug" ]]; then
+        LEC_DEBUG=1
+    fi
+done
 
 # ═══════════════════════════════════════════════════════════════
 # 库文件加载
@@ -66,63 +75,65 @@ load_module() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 加载核心库
+# 加载核心库(debug必须最先加载以捕获后续所有错误)
 # ═══════════════════════════════════════════════════════════════
 
+load_lib "debug"
 load_lib "common"
 load_lib "core"
 load_lib "io"
 load_lib "utils"
 load_lib "network"
+load_lib "update"
 load_lib "menu"
 
 # ═══════════════════════════════════════════════════════════════
 # 预加载模块（注册主菜单）
 # ═══════════════════════════════════════════════════════════════
 
-CORE_MODULES=(
-    "basic"
-    "apt"
-    "jdk"
-    "miniconda3"
-    "docker"
-    "docker-compose"
-)
+# ═══════════════════════════════════════════════════════════════
+# 预加载模块（注册主菜单）
+# ═══════════════════════════════════════════════════════════════
 
-LOADED_MODULES=()
+load_all_modules() {
+    local -a CORE_MODULES=("basic" "apt" "jdk" "miniconda3" "docker")
+    local -a LOADED_MODULES=()
+    local module_name module_path module_file loaded is_loaded
 
-for module_name in "${CORE_MODULES[@]}"; do
-    if [[ -f "$SCRIPT_DIR/modules/${module_name}.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "$SCRIPT_DIR/modules/${module_name}.sh"
-        LOADED_MODULES+=("${module_name}.sh")
-    fi
-done
-
-for module_path in "$SCRIPT_DIR"/modules/*.sh; do
-    [[ -f $module_path ]] || continue
-    module_file=$(basename "$module_path")
-    
-    is_loaded=false
-    for loaded in "${LOADED_MODULES[@]}"; do
-        [[ "$module_file" == "$loaded" ]] && is_loaded=true && break
+    for module_name in "${CORE_MODULES[@]}"; do
+        if [[ -f "$SCRIPT_DIR/modules/${module_name}.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "$SCRIPT_DIR/modules/${module_name}.sh"
+            LOADED_MODULES+=("${module_name}.sh")
+        fi
     done
-    
-    if [[ "$is_loaded" == false ]]; then
-        # shellcheck source=/dev/null
-        source "$module_path"
-    fi
-done
+
+    for module_path in "$SCRIPT_DIR"/modules/*.sh; do
+        [[ -f $module_path ]] || continue
+        module_file=$(basename "$module_path")
+
+        is_loaded=false
+        for loaded in "${LOADED_MODULES[@]}"; do
+            [[ "$module_file" == "$loaded" ]] && is_loaded=true && break
+        done
+
+        if [[ "$is_loaded" == false ]]; then
+            # shellcheck source=/dev/null
+            source "$module_path"
+        fi
+    done
+}
+
+load_all_modules
 
 # ═══════════════════════════════════════════════════════════════
 # 环境预配置
 # ═══════════════════════════════════════════════════════════════
 
 install_project_deps() {
-    local required_tools=("curl" "wget" "git" "jq" "unzip")
     local missing_tools=()
 
-    for tool in "${required_tools[@]}"; do
+    for tool in "${REQUIRED_TOOLS[@]}"; do
         if ! command_exists "$tool"; then
             missing_tools+=("$tool")
         fi
@@ -133,7 +144,11 @@ install_project_deps() {
     fi
 
     msg_info "安装缺失组件: ${missing_tools[*]}"
-    install_packages "${missing_tools[@]}"
+    if install_packages "${missing_tools[@]}"; then
+        return 2
+    else
+        return 1
+    fi
 }
 
 _show_preconf_summary() {
@@ -200,21 +215,8 @@ _show_preconf_summary() {
     echo -e "  ${GREEN}╰${border}╯${NC}"
 }
 
-init_config() {
-    clear_screen
-
-    check_root
-    check_os
-    
-    local os arch memory disk
-    os=$(get_os_name)
-    arch=$(get_arch)
-    memory=$(get_memory_info)
-    disk=$(get_disk_usage)
-    
-    if ! ensure_network_ready; then
-        exit 1
-    fi
+_show_system_panel() {
+    local os="$1" arch="$2" memory="$3" disk="$4"
 
     show_banner_rich \
         "🐧 $SCRIPT_NAME v$SCRIPT_VERSION" \
@@ -222,57 +224,73 @@ init_config() {
         "脚本作用: Linux 基础环境配置 " \
         "✨ Developed by mingy@蚁景科技 ✨" \
         60 1
-    
+
     local entries=(
         "操作系统:|$os"             "系统架构:|$arch"
         "系统内存:|$memory"         "磁盘使用:|$disk"
     )
 
     local col_w=26
+    local i e1 e2
     for ((i=0; i<${#entries[@]}; i+=2)); do
-        local e1="${entries[i]}"
-        local e2="${entries[i+1]:-}"
-        
+        e1="${entries[i]}"
+        e2="${entries[i+1]:-}"
+
         local line="  ${GREEN}│${NC}  "
-        
+
         if [[ -n $e1 ]]; then
             local n1="${e1%%|*}"
             local v1="${e1#*|}"
-            local pure_v1
-            pure_v1=$(echo -e "$v1" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g")
             local w1
-            w1=$(str_display_width "${n1}  ${pure_v1}")
+            w1=$(str_display_width "${n1}  ${v1}")
             local p1=$((col_w - w1))
             [[ $p1 -lt 0 ]] && p1=0
             line+="${WHITE}${n1}${NC}  ${v1}$(printf '%*s' "$p1" ' ')"
         else
             line+="$(printf '%*s' "$col_w" ' ')"
         fi
-        
+
         line+="  "
-        
+
         if [[ -n $e2 ]]; then
             local n2="${e2%%|*}"
             local v2="${e2#*|}"
-            local pure_v2
-            pure_v2=$(echo -e "$v2" | sed -r "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGK]//g")
             local w2
-            w2=$(str_display_width "${n2}  ${pure_v2}")
+            w2=$(str_display_width "${n2}  ${v2}")
             local p2=$((col_w - w2))
             [[ $p2 -lt 0 ]] && p2=0
             line+="${WHITE}${n2}${NC}  ${v2}$(printf '%*s' "$p2" ' ')"
         else
             line+="$(printf '%*s' "$col_w" ' ')"
         fi
-        
+
         line+="  ${GREEN}│${NC}"
         echo -e "$line"
     done
-    
+
     local total_w=60
     local border
     border=$(printf '─%.0s' $(seq 1 $((total_w - 2))))
     echo -e "  ${GREEN}╰${border}╯${NC}"
+}
+
+init_config() {
+    clear_screen
+
+    check_root
+    check_os
+
+    local os arch memory disk
+    os=$(get_os_name)
+    arch=$(get_arch)
+    memory=$(get_memory_info)
+    disk=$(get_disk_usage)
+
+    if ! ensure_network_ready; then
+        exit 1
+    fi
+
+    _show_system_panel "$os" "$arch" "$memory" "$disk"
 
     local apt_result="skip" deps_result="ok" update_result="skip" gpg_result=""
 
@@ -288,27 +306,18 @@ init_config() {
         msg_info "APT配置模块未加载"
     fi
 
-  show_section "基础工具检查" "2" "3"
-  local required_tools=("curl" "wget" "git" "jq" "unzip")
-  local missing_tools=()
-  for tool in "${required_tools[@]}"; do
-     command_exists "$tool" || ((missing_count++))
-     if ! command_exists "$tool"; then
-         missing_tools+=("$tool")
-     fi
-  done
+    show_section "基础工具检查" "2" "3"
+    local deps_ret=0
+    install_project_deps || deps_ret=$?
 
-  if [[ ${#missing_tools[@]} -eq 0 ]]; then
-      msg_success "系统已安装所有必备组件 (${#required_tools[@]}/${#required_tools[@]})"
-      deps_result="ok"
-  else
-     msg_info "共缺失 ${#missing_tools[@]} 个组件: ${missing_tools[*]}"
-      if install_project_deps; then
-          deps_result="install"
-      else
-          deps_result="fail"
-      fi
-  fi
+    if [[ $deps_ret -eq 0 ]]; then
+        msg_success "系统已安装所有必备组件 (${#REQUIRED_TOOLS[@]}/${#REQUIRED_TOOLS[@]})"
+        deps_result="ok"
+    elif [[ $deps_ret -eq 2 ]]; then
+        deps_result="install"
+    else
+        deps_result="fail"
+    fi
 
     show_section "项目更新检查" "3" "3"
     if confirm "是否检查项目更新?"; then
@@ -342,32 +351,33 @@ init_config() {
     pause
 }
 
+acquire_instance_lock() {
+    if ! { exec 9>/var/lock/LinuxEnvConfig.lock; } 2>/dev/null; then
+        return 0
+    fi
+    if ! flock -n 9 2>/dev/null; then
+        msg_error "检测到另一个${SCRIPT_NAME}实例正在运行, 请勿同时开启多个实例"
+        exit 1
+    fi
+}
+
 main() {
+    acquire_instance_lock
     init_config
-    
+    lec_enable_farewell
+
     local choice
     while true; do
         show_main_menu
 
         msg_prompt "请选择操作 [1-${#MAIN_MENU_ITEMS[@]}, q退出]"
 
-        local ret=0
-        handle_main_menu "$choice" || ret=$?
-        
-        if [[ $ret -eq 255 ]]; then
+        if [[ $choice == "q" || $choice == "Q" ]]; then
             break
         fi
+
+        handle_main_menu "$choice" || true
     done
-
-    clear_screen
-    
-    show_banner_rich \
-        "👋 感谢使用 $SCRIPT_NAME" \
-        "作者: mingy@蚁景科技" \
-        "" \
-        "https://gitee.com/yijingsec/LinuxEnvConfig"
-
-    echo ""
 }
 
 main "$@"

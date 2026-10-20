@@ -25,10 +25,6 @@
 # 网络连通性检查
 # ═══════════════════════════════════════════════════════════════
 
-check_network_connection() {
-    check_ip_connectivity
-}
-
 get_local_ip() {
     local interface="${1:-}"
     if [[ -n $interface ]]; then
@@ -155,24 +151,9 @@ ensure_network_ready() {
 
     if ! check_dns_resolution; then
         msg_warning "网络已连接，但域名解析(DNS)失败"
-        if confirm "是否立即尝试配置DNS以修复此问题?"; then
-            if declare -f config_dns >/dev/null; then
-                config_dns
-                if check_dns_resolution; then
-                    msg_success "DNS修复成功"
-                else
-                    show_network_troubleshooting "DNS_FAIL"
-                    return 1
-                fi
-            else
-                msg_error "未加载DNS配置模块，无法自动修复"
-                show_network_troubleshooting "DNS_FAIL"
-                return 1
-            fi
-        else
-            show_network_troubleshooting "DNS_FAIL"
-            return 1
-        fi
+        msg_info "可通过主菜单[基础配置-设置DNS名称服务器]修复后重试"
+        show_network_troubleshooting "DNS_FAIL"
+        return 1
     fi
 
     if ! check_http_access; then
@@ -208,122 +189,6 @@ show_network_troubleshooting() {
     echo ""
     msg_info "脚本将安全退出，请解决网络问题后重试。"
     echo ""
-}
-
-# ═══════════════════════════════════════════════════════════════
-# 项目在线更新
-# ═══════════════════════════════════════════════════════════════
-
-get_remote_version() {
-    local api_url="https://gitee.com/api/v5/repos/yijingsec/LinuxEnvConfig/tags"
-    local response
-    response=$(curl -fsSL --max-time 10 "$api_url" 2>/dev/null || echo "")
-    if [[ -z "$response" ]]; then
-        echo ""
-        return
-    fi
-    if command_exists jq; then
-        echo "$response" | jq -r ".[0].name" 2>/dev/null
-    else
-        echo "$response" | grep -oP '"name":"\K[^"]+' | head -n 1
-    fi
-}
-
-check_project_update() {
-    show_section "项目更新检查"
-    if ! check_network_connection; then
-        msg_warning "网络不可用，跳过更新检查"
-        return 1
-    fi
-
-    if [[ -d "$SCRIPT_DIR/.git" ]] && command_exists git; then
-        local current_branch
-        current_branch=$(git -c safe.directory="*" -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
-        if [[ "$current_branch" != "master" && -n "$current_branch" ]]; then
-            msg_info "当前处于开发分支[${current_branch}]，已跳过版本更新检测"
-            return 0
-        fi
-
-        msg_info "通过Git检查项目更新..."
-        local repo_url="https://gitee.com/yijingsec/LinuxEnvConfig.git"
-        local remote_latest
-        remote_latest=$(git -c safe.directory="*" ls-remote "$repo_url" HEAD 2>/dev/null | cut -f1 || true)
-        local local_current
-        local_current=$(git -c safe.directory="*" -C "$SCRIPT_DIR" rev-parse HEAD 2>/dev/null || true)
-
-        if [[ -n "$remote_latest" && -n "$local_current" ]]; then
-            if [[ "$remote_latest" != "$local_current" ]]; then
-                msg_info "发现新版本(本地:${local_current:0:7}，远程:${remote_latest:0:7})"
-                if confirm "是否更新到最新项目?"; then
-                    msg_info "正在更新项目..."
-                    git -c safe.directory="*" -C "$SCRIPT_DIR" restore . >/dev/null 2>&1 || true
-                    git -c safe.directory="*" -C "$SCRIPT_DIR" pull --quiet
-                    if action "更新项目成功!请重新运行脚本" "更新项目失败，请稍后重试或检查网络"; then
-                        exit 0
-                    else
-                        return 1
-                    fi
-                else
-                    msg_info "已跳过更新"
-                    return 2
-                fi
-            else
-                msg_success "项目代码已是最新"
-                return 0
-            fi
-        fi
-        msg_warning "无法获取Git提交记录，回退到版本号模式..."
-    fi
-
-    msg_info "正在通过API检查版本..."
-    local remote_version
-    remote_version=$(get_remote_version)
-    if [[ -z $remote_version ]]; then
-        msg_warning "无法获取远程版本信息"
-        return 1
-    fi
-
-    if [[ "$remote_version" != "$SCRIPT_VERSION" ]]; then
-        msg_info "发现新版本:$remote_version(当前:$SCRIPT_VERSION)"
-        if confirm "是否更新到最新项目?"; then
-            update_project_tarball "$remote_version"
-        else
-            msg_info "已跳过更新"
-            return 2
-        fi
-    else
-        msg_success "已是最新版本($SCRIPT_VERSION)"
-    fi
-}
-update_project_tarball() {
-    local version="${1:-}"
-
-    msg_info "正在更新项目..."
-
-    local backup_dir
-    backup_dir="$SCRIPT_DIR/.backup.$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir"
-    cp -r "$SCRIPT_DIR"/*.sh "$backup_dir/" 2>/dev/null || true
-
-    local temp_dir
-    temp_dir=$(mktemp -d)
-
-    if curl -fsSL -o "$temp_dir/update.tar.gz" \
-        "https://gitee.com/yijingsec/LinuxEnvConfig/repository/archive/${version}.tar.gz" 2>/dev/null; then
-
-        tar -xzf "$temp_dir/update.tar.gz" -C "$temp_dir"
-
-        cp -r "$temp_dir"/LinuxEnvConfig-*/* "$SCRIPT_DIR/"
-
-        msg_success "更新完成! 请重新运行脚本"
-        rm -rf "$temp_dir"
-
-        exit 0
-    else
-        msg_error "更新失败"
-        rm -rf "$temp_dir"
-        return 1
-    fi
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -409,40 +274,5 @@ recommend_mirror() {
         msg_error "所有镜像测试失败"
         return 1
     fi
-}
-
-# ═══════════════════════════════════════════════════════════════
-# Kali GPG密钥管理
-# ═══════════════════════════════════════════════════════════════
-
-update_kali_gpg_key() {
-    if [[ "$OS_ID" != "kali" ]]; then
-        return 2
-    fi
-
-    local kali_ver="$OS_VER"
-    local threshold="2025.1"
-    [[ "$kali_ver" =~ ^25\. ]] && threshold="25.01"
-
-    if [[ "$(printf "%s\n%s\n" "$threshold" "$kali_ver" | sort -V | head -n1)" != "$kali_ver" ]]; then
-        return 2
-    fi
-
-    show_section "Kali GPG密钥更新"
-    msg_info "检测到旧版Kali($kali_ver)，正在更新GPG密钥..."
-
-    if wget -q -O - https://archive.kali.org/archive-key.asc 2>/dev/null | \
-        apt-key add - >/dev/null 2>&1; then
-        msg_success "GPG密钥更新成功"
-        return 0
-    fi
-
-    if gpg --fetch-keys https://archive.kali.org/archive-key.asc 2>/dev/null; then
-        msg_success "GPG密钥更新成功"
-        return 0
-    fi
-
-    msg_warning "GPG密钥更新失败, 可能不影响正常使用"
-    return 1
 }
 

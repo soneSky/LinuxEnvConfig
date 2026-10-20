@@ -56,29 +56,23 @@ install_ocr_api_server() {
     check_docker || return 1
     show_section "安装OCR API服务"
 
-    if docker ps -a --format '{{.Names}}' | grep -q "^${OCR_CONTAINER}$"; then
-        msg_success "检测到OCR API服务容器已存在"
-        return 0
-    fi
+    docker_confirm_reinstall "${OCR_CONTAINER}" "OCR API" || return 0
 
     local host_ip
     host_ip=$(get_best_ip)
 
-    docker_pull_image "${OCR_IMAGE}"
-
-    msg_info "正在启动OCR API容器服务..."
-    docker run -d -p 9898:9898 \
-        --name "${OCR_CONTAINER}" --restart always \
-        "${OCR_IMAGE}" >/dev/null 2>&1
-
-    if action "OCR API容器创建成功" "启动OCR API容器失败"; then
-        msg_info "正在等待服务初始化..."
-        sleep 3
-        msg_success "OCR API服务部署完成"
-        show_access_info \
-            "健康检查: http://${host_ip}:9898/ping"
-        msg_warning "提示: 访问后如返回'pong'则代表服务运行正常"
+    if ! docker_deploy_container "${OCR_IMAGE}" "${OCR_CONTAINER}" "OCR API" \
+        "启动OCR API容器失败" \
+        -p 9898:9898 \
+        --restart always; then
+        return 1
     fi
+
+    sleep 3
+    msg_success "OCR API服务部署完成"
+    show_access_info \
+        "健康检查: http://${host_ip}:9898/ping"
+    msg_warning "提示: 访问后如返回'pong'则代表服务运行正常"
 }
 
 stop_ocr_api_server() {

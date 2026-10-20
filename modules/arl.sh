@@ -64,23 +64,25 @@ config_arl() {
             "停止ARL" \
             "启动ARL" \
             "卸载ARL" \
-            "添加指纹" \
+            "查看ARL状态" \
             "修改常用配置"
 
         local choice
+        local ret
         msg_prompt "请选择操作 [0-6, q退出]"
 
         case $choice in
             0) return ;;
             q|Q) exit 0 ;;
-            1) install_arl; pause ;;
-            2) stop_arl; pause ;;
-            3) start_arl; pause ;;
-            4) remove_arl; pause ;;
-            5) add_fingerprint_to_arl; pause ;;
-            6) modify_arl_config; pause ;;
-            *) msg_error "无效选择"; pause ;;
+            1) install_arl ;;
+            2) stop_arl ;;
+            3) start_arl ;;
+            4) remove_arl ;;
+            5) show_arl_status ;;
+            6) modify_arl_config; ret=$?; [[ $ret -eq 255 ]] && continue ;;
+            *) msg_error "无效选择" ;;
         esac
+        pause
     done
 }
 
@@ -92,6 +94,11 @@ install_arl() {
     check_docker || return 1
     check_docker_compose || return 1
     show_section "安装灯塔ARL"
+
+    if [[ -d "${ARL_DIR}" ]]; then
+        msg_success "检测到灯塔ARL已安装, 路径: ${ARL_DIR}"
+        return 0
+    fi
     
     local host_ip
     prompt_host_ip "灯塔ARL" || return 1
@@ -165,6 +172,10 @@ install_arl() {
 
 stop_arl() {
     show_section "停止灯塔ARL"
+    if [[ ! -d "${ARL_DIR}" ]]; then
+        msg_error "未找到ARL安装目录, 请先安装"
+        return 1
+    fi
     docker_compose_stop "${ARL_DIR}" "灯塔ARL"
 }
 
@@ -208,6 +219,15 @@ start_arl() {
     else
         return 1
     fi
+}
+
+# ═══════════════════════════════════════════════════════════════
+# 查看灯塔ARL状态
+# ═══════════════════════════════════════════════════════════════
+
+show_arl_status() {
+    show_section "灯塔ARL状态信息"
+    show_compose_status_table "${ARL_DIR}" "ARL"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -300,6 +320,19 @@ add_fingerprint_to_arl() {
         local py_cmd
         py_cmd=$(get_python_command)
         if [[ -n "$py_cmd" ]]; then
+            if ! sudo "$py_cmd" -c "import requests" >/dev/null 2>&1; then
+                msg_info "正在安装requests依赖包..."
+                local install_success=false
+                if sudo "$py_cmd" -m pip install requests --break-system-packages >/dev/null 2>&1 || \
+                   sudo "$py_cmd" -m pip install requests >/dev/null 2>&1; then
+                    install_success=true
+                elif is_package_available "python3-requests" && sudo apt-get install -y python3-requests >/dev/null 2>&1; then
+                    install_success=true
+                fi
+                if ! $install_success; then
+                    msg_warning "requests依赖包安装失败"
+                fi
+            fi
             msg_info "正在执行指纹添加 (这可能需要一些时间)..."
             sudo "$py_cmd" ARL-Finger-ADD.py "https://${arl_ip}:${arl_port}/" "${ARL_DEFAULT_USER}" "${arl_pass}" >/dev/null 2>&1
             action "指纹添加任务已完成" "指纹添加任务执行失败"
@@ -421,9 +454,16 @@ sys.exit(1)
 # ═══════════════════════════════════════════════════════════════
 
 modify_arl_config() {
+    if [[ ! -d "${ARL_DIR}" ]]; then
+        msg_error "未找到ARL安装目录, 请先安装"
+        pause
+        return 1
+    fi
+
     local config_file="${ARL_CONFIG_FILE}"
     if [[ ! -f "$config_file" ]]; then
         msg_error "未找到 ARL 配置文件: $config_file"
+        pause
         return 1
     fi
 
@@ -434,19 +474,23 @@ modify_arl_config() {
             "修改三方 API" \
             "管理禁止域名" \
             "修改爆破字典路径" \
+            "添加指纹" \
+            "修改登录密码" \
             "应用配置并重启服务"
 
         local choice
-        msg_prompt "请选择操作 [0-5, q退出]"
+        msg_prompt "请选择操作 [0-7, q退出]"
 
         case $choice in
             0) pop_path; return ;;
             q|Q) exit 0 ;;
             1) modify_arl_fofa "$config_file"; pause ;;
-            2) modify_arl_thirdparty_api "$config_file"; pause ;;
+            2) modify_arl_thirdparty_api "$config_file"; ret=$?; [[ $ret -eq 255 ]] && continue; pause ;;
             3) manage_arl_forbidden_domains "$config_file" ;;
             4) modify_arl_dict "$config_file" ;;
-            5) restart_arl_services; pause ;;
+            5) add_fingerprint_to_arl; pause ;;
+            6) change_arl_password; pause ;;
+            7) restart_arl_services; pause ;;
             *) msg_error "无效选择"; pause ;;
         esac
     done
@@ -494,8 +538,8 @@ modify_arl_thirdparty_api() {
 
         local choice
         msg_prompt "请选择操作 [0-6, q退出]"
-        [[ "$choice" == "0" ]] && { pop_path; return; }
-        [[ "$choice" =~ ^[qQ]$ ]] && { pop_path; return; }
+        [[ "$choice" == "0" ]] && { pop_path; return 255; }
+        [[ "$choice" =~ ^[qQ]$ ]] && { pop_path; return 255; }
 
         local plugin_name=""
         local token_key="api_key"
@@ -506,7 +550,7 @@ modify_arl_thirdparty_api() {
             4) plugin_name="chaos"; token_key="api_key" ;;
             5) plugin_name="virustotal"; token_key="api_key" ;;
             6) plugin_name="securitytrails"; token_key="api_key" ;;
-            *) msg_error "无效选择"; continue ;;
+            *) msg_error "无效选择"; pause; continue ;;
         esac
 
         show_section "配置 $plugin_name"
@@ -604,6 +648,7 @@ for line in lines:
                 read -r -p "  ${CYAN}请输入要新增的域名 (例如 company.com): ${NC}" new_domain
                 if [[ -z "$new_domain" ]]; then
                     msg_error "域名不能为空"
+                    pause
                     continue
                 fi
                 sudo "$py_cmd" -c '
@@ -656,6 +701,7 @@ with open(filepath, "w", encoding="utf-8") as f:
                 read -r -p "  ${CYAN}请输入要删除的域名编号 (1-${#domain_list[@]}): ${NC}" del_idx
                 if ! [[ "$del_idx" =~ ^[0-9]+$ ]] || [[ "$del_idx" -lt 1 ]] || [[ "$del_idx" -gt ${#domain_list[@]} ]]; then
                     msg_error "无效编号"
+                    pause
                     continue
                 fi
                 local del_domain="${domain_list[$((del_idx-1))]}"
@@ -804,5 +850,48 @@ restart_arl_services() {
     fi
 }
 
-register_main_menu "配置ARL" "config_arl"
+# ═══════════════════════════════════════════════════════════════
+# 修改ARL登录密码
+# ═══════════════════════════════════════════════════════════════
 
+change_arl_password() {
+    show_section "修改ARL登录密码"
+    if [[ ! -d "${ARL_DIR}" ]]; then
+        msg_error "未找到ARL安装目录, 请先安装"
+        return 1
+    fi
+
+    local mongo_container
+    mongo_container=$(sudo docker ps --format '{{.Names}}' | grep -E "arl[-_]mongodb|arl[-_]mongo" | head -n 1)
+    if [[ -z "$mongo_container" ]]; then
+        mongo_container=$(sudo docker ps --filter "ancestor=${ARL_MONGO_IMAGE}" --format '{{.Names}}' | head -n 1)
+    fi
+
+    if [[ -z "$mongo_container" ]]; then
+        msg_error "未检测到运行中的ARL MongoDB容器, 请确保ARL服务已启动"
+        return 1
+    fi
+
+    local arl_pass
+    read -r -p "  ${CYAN}请输入新的ARL登录密码: ${NC}" arl_pass
+    if [[ -z "${arl_pass}" ]]; then
+        msg_error "密码不能为空"
+        return 1
+    fi
+
+    msg_info "正在修改ARL登录密码..."
+    if sudo docker exec -i "${mongo_container}" mongo -u admin -p admin <<EOF >/dev/null 2>&1
+use arl
+db.user.drop()
+db.user.insert({ username: 'admin', password: hex_md5('arlsalt!@#'+'${arl_pass}') })
+EOF
+    then
+        msg_success "ARL登录密码修改成功!"
+        msg_info "新密码为: ${arl_pass}"
+    else
+        msg_error "修改ARL密码失败, 请检查MongoDB容器状态或日志"
+        return 1
+    fi
+}
+
+register_main_menu "配置ARL" "config_arl"

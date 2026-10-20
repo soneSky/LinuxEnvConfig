@@ -56,30 +56,25 @@ install_vulfocus() {
     check_docker || return 1
     show_section "安装Vulfocus平台"
 
-    if docker ps -a --format '{{.Names}}' | grep -q "^${VULFOCUS_CONTAINER}$"; then
-        msg_success "检测到Vulfocus容器已存在, 请选择启动或卸载重装"
-        return 0
-    fi
+    docker_confirm_reinstall "${VULFOCUS_CONTAINER}" "Vulfocus" || return 0
 
     local host_ip host_port
-    prompt_host_ip "Vulfocus" || return 1 
+    prompt_host_ip "Vulfocus" || return 1
     prompt_host_port "Vulfocus" "${VULFOCUS_DEFAULT_PORT}" "host_port" || return 1
 
-    docker_pull_image "${VULFOCUS_IMAGE}"
-
-    msg_info "正在启动Vulfocus容器..."
-    docker run -d -p "${host_port}:80" \
-        --name "${VULFOCUS_CONTAINER}" --restart always \
+    if ! docker_deploy_container "${VULFOCUS_IMAGE}" "${VULFOCUS_CONTAINER}" "Vulfocus" \
+        "启动Vulfocus容器失败" \
+        -p "${host_port}:80" \
         -v /var/run/docker.sock:/var/run/docker.sock \
         -e VUL_IP="${host_ip}" \
-        "${VULFOCUS_IMAGE}" >/dev/null 2>&1
-
-    if action "Vulfocus安装成功" "启动Vulfocus容器失败"; then
-        show_access_info \
-            "访问地址: http://${host_ip}:${host_port}" \
-            "默认用户: admin" \
-            "默认密码: admin"
+        --restart always; then
+        return 1
     fi
+
+    show_access_info \
+        "访问地址: http://${host_ip}:${host_port}" \
+        "默认用户: admin" \
+        "默认密码: admin"
 }
 
 stop_vulfocus() {

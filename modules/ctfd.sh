@@ -66,30 +66,23 @@ install_ctfd() {
     check_docker || return 1
     show_section "安装CTFd框架"
 
+    docker_confirm_reinstall "${CTFD_CONTAINER}" "CTFd" || return 0
+
     local host_ip host_port
     prompt_host_ip "CTFd" || return 1
     prompt_host_port "CTFd" "${CTFD_DEFAULT_PORT}" || return 1
 
-    if ! docker_pull_image "${CTFD_IMAGE}"; then
+    if ! docker_deploy_container "${CTFD_IMAGE}" "${CTFD_CONTAINER}" "CTFd" \
+        "启动服务失败, 请检查端口 ${host_port} 是否被占用" \
+        -it -p "${host_port}:8000" \
+        --restart always; then
         return 1
     fi
 
-    msg_info "正在启动容器服务..."
-    docker rm -f "${CTFD_CONTAINER}" >/dev/null 2>&1
-    
-    docker run -dit \
-        -p "${host_port}:8000" \
-        --name "${CTFD_CONTAINER}" \
-        --restart always \
-        "${CTFD_IMAGE}" >/dev/null 2>&1
-        
-    if action "CTFd容器创建成功" "启动服务失败, 请检查端口 ${host_port} 是否被占用"; then
-        docker_wait_healthy "${CTFD_CONTAINER}" "CTFd"
-        msg_success "CTFd部署完成"
-        show_access_info \
-            "访问地址: http://${host_ip}:${host_port}" \
-            "提示: 首次运行需通过页面引导完成初始化设置"
-    fi
+    msg_success "CTFd部署完成"
+    show_access_info \
+        "访问地址: http://${host_ip}:${host_port}" \
+        "提示: 首次运行需通过页面引导完成初始化设置"
 }
 
 # ═══════════════════════════════════════════════════════════════

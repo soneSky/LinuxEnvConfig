@@ -72,11 +72,7 @@ install_metasploit() {
             ;;
         "Kali")
             msg_info "正在通过Kali官方软件源安装..."
-            msg_info "正在更新软件包列表..."
-            sudo apt-get update 2>&1 | sed 's/^/  /'
-            
-            msg_info "正在安装metasploit-framework..."
-            sudo apt-get install -y metasploit-framework 2>&1 | sed 's/^/  /'
+            install_packages "metasploit-framework"
             action "Metasploit安装完成" "APT安装失败"
             ;;
         *)
@@ -105,8 +101,8 @@ remove_metasploit() {
 
     if confirm "确定要彻底卸载Metasploit Framework吗?"; then
         msg_info "正在清理软件包..."
-        if sudo apt-get remove --purge -y metasploit-framework 2>&1 | sed 's/^/  /'; then
-            sudo apt-get autoremove -y >/dev/null 2>&1
+        if purge_package "metasploit-framework"; then
+            sudo apt-get autoremove -y >/dev/null 2>&1 || true
             msg_info "正在清理残留配置文件..."
             sudo rm -rf /usr/share/keyrings/metasploit-framework.gpg >/dev/null 2>&1
             sudo rm -rf ~/.msf4 >/dev/null 2>&1

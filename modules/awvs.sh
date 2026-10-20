@@ -84,26 +84,25 @@ install_awvs() {
     check_docker || return 1
     show_section "安装AWVS扫描器"
 
+    docker_confirm_reinstall "${AWVS_CONTAINER}" "AWVS" || return 0
+
     local host_ip host_port
     prompt_host_ip "AWVS" || return 1
     prompt_host_port "AWVS" "${AWVS_DEFAULT_PORT}" || return 1
 
-    if ! docker_pull_image "${AWVS_IMAGE}"; then return 1; fi
-
-    msg_info "正在启动容器服务..."
-    docker rm -f "${AWVS_CONTAINER}" >/dev/null 2>&1
-    docker run -dit -p "${host_port}:3443" \
-        --name "${AWVS_CONTAINER}" --cap-add LINUX_IMMUTABLE \
-        --restart always "${AWVS_IMAGE}" >/dev/null 2>&1
-
-    if action "AWVS容器创建成功" "容器启动失败, 请检查端口是否被占用"; then
-        docker_wait_healthy "${AWVS_CONTAINER}" "AWVS"
-        msg_success "AWVS部署完成"
-        show_access_info \
-            "访问地址:https://${host_ip}:${host_port}" \
-            "默认用户:admin@admin.com" \
-            "默认密码:Admin123"
+    if ! docker_deploy_container "${AWVS_IMAGE}" "${AWVS_CONTAINER}" "AWVS" \
+        "容器启动失败, 请检查端口是否被占用" \
+        -it -p "${host_port}:3443" \
+        --cap-add LINUX_IMMUTABLE \
+        --restart always; then
+        return 1
     fi
+
+    msg_success "AWVS部署完成"
+    show_access_info \
+        "访问地址:https://${host_ip}:${host_port}" \
+        "默认用户:admin@admin.com" \
+        "默认密码:Admin123"
 }
 
 # ═══════════════════════════════════════════════════════════════
