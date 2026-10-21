@@ -18,12 +18,12 @@ Ubuntu/Kali Linux基础环境与安全工具自动化配置脚本。项目已完
 
 使用 `curl` 命令：
 ```bash
-curl -sSL https://gitee.com/yijingsec/LinuxEnvConfig/raw/master/install.sh | sudo bash
+curl -sSL https://github.com/soneSky/LinuxEnvConfig/raw/master/install.sh | sudo bash
 ```
 
 或者使用 `wget` 命令：
 ```bash
-wget -qO- https://gitee.com/yijingsec/LinuxEnvConfig/raw/master/install.sh | sudo bash
+wget -qO- https://github.com/soneSky/LinuxEnvConfig/raw/master/install.sh | sudo bash
 ```
 
 ### 方式二：本地克隆运行
@@ -31,7 +31,7 @@ wget -qO- https://gitee.com/yijingsec/LinuxEnvConfig/raw/master/install.sh | sud
 如果您想把项目克隆到本地直接运行：
 
 ```bash
-git clone https://gitee.com/yijingsec/LinuxEnvConfig.git
+git clone https://github.com/soneSky/LinuxEnvConfig.git
 cd LinuxEnvConfig
 sudo bash main.sh
 ```
@@ -60,7 +60,7 @@ sudo bash main.sh
 
 ```bash
 # 克隆 v1 分支代码
-git clone -b v1 https://gitee.com/yijingsec/LinuxEnvConfig.git
+git clone -b v1 https://github.com/soneSky/LinuxEnvConfig.git
 
 # 运行单体配置脚本
 cd LinuxEnvConfig
