@@ -114,4 +114,4 @@ remove_awvs() {
     docker_remove_container_and_image "${AWVS_CONTAINER}" "${AWVS_IMAGE}" "AWVS"
 }
 
-register_main_menu "配置AWVS" "config_awvs"
+register_main_menu "配置AWVS · 漏洞扫描器" "config_awvs"

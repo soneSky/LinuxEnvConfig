@@ -325,4 +325,4 @@ show_deepaudit_status() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置DeepAudit" "config_deepaudit"
+register_main_menu "配置DeepAudit · 深度审计分析" "config_deepaudit"

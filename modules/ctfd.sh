@@ -120,4 +120,4 @@ remove_ctfd() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置CTFd" "config_ctfd"
+register_main_menu "配置CTFd · CTF竞赛框架" "config_ctfd"

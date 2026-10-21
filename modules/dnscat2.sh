@@ -142,4 +142,4 @@ remove_dnscat2() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置Dnscat2" "config_dnscat2"
+register_main_menu "配置Dnscat2 · DNS隧道" "config_dnscat2"

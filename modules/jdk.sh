@@ -821,4 +821,4 @@ remove_jdk() {
     fi
 }
 
-register_main_menu "配置JDK" "config_jdk"
+register_main_menu "配置JDK · Java运行环境" "config_jdk"

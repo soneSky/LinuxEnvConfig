@@ -894,4 +894,4 @@ EOF
     fi
 }
 
-register_main_menu "配置ARL" "config_arl"
+register_main_menu "配置ARL · 灯塔资产侦察系统" "config_arl"

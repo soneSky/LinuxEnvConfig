@@ -188,4 +188,4 @@ uninstall_ohmyzsh() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置OhMyZsh" "config_ohmyzsh"
+register_main_menu "配置OhMyZsh · 终端美化与增强" "config_ohmyzsh"

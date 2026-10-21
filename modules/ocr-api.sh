@@ -97,4 +97,4 @@ remove_ocr_api_server() {
     docker_remove_container_and_image "${OCR_CONTAINER}" "${OCR_IMAGE}" "OCR API"
 }
 
-register_main_menu "配置OCR-API" "config_ocr_api_server"
+register_main_menu "配置OCR-API · 文字识别服务" "config_ocr_api_server"

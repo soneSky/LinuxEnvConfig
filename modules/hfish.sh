@@ -167,4 +167,4 @@ remove_hfish() {
     docker_compose_remove "${HFISH_DIR}" "HFish" "${HFISH_IMAGE}" "${HFISH_MYSQL_IMAGE}"
 }
 
-register_main_menu "配置HFish" "config_hfish"
+register_main_menu "配置HFish · 蜜罐系统" "config_hfish"

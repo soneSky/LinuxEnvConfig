@@ -335,4 +335,4 @@ remove_miniconda3() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置Miniconda3" "config_miniconda3"
+register_main_menu "配置Miniconda3 · Python环境管理" "config_miniconda3"

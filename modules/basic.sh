@@ -307,4 +307,4 @@ delete_selected_dns() {
 
 # unlock_dns_port 已迁移至lib/utils.sh, 供基础配置与dnscat2模块共用
 
-register_main_menu "基础配置" "config_basic"
+register_main_menu "基础配置 · 系统基础环境与工具优化" "config_basic"

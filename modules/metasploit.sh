@@ -117,4 +117,4 @@ remove_metasploit() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置Metasploit" "config_metasploit"
+register_main_menu "配置Metasploit · 渗透测试框架" "config_metasploit"

@@ -120,4 +120,4 @@ remove_beef() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置BeEF" "config_beef"
+register_main_menu "配置BeEF · 浏览器渗透框架" "config_beef"

@@ -302,4 +302,4 @@ reset_scopesentry_password() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置ScopeSentry" "config_scopesentry"
+register_main_menu "配置ScopeSentry · 分布式资产侦察管理" "config_scopesentry"

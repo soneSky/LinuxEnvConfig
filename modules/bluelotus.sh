@@ -119,4 +119,4 @@ remove_bluelotus() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置BlueLotus" "config_bluelotus"
+register_main_menu "配置BlueLotus · XSS接收平台" "config_bluelotus"

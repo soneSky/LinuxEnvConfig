@@ -246,4 +246,4 @@ remove_viper() {
     docker_compose_remove "${VIPER_DIR}" "Viper" "${VIPER_IMAGE}"
 }
 
-register_main_menu "配置Viper" "config_viper"
+register_main_menu "配置Viper · 图形化渗透测试框架" "config_viper"

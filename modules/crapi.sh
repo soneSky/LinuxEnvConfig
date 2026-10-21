@@ -192,4 +192,4 @@ uninstall_crapi() {
     fi
 }
 
-register_main_menu "配置crAPI" "config_crAPI"
+register_main_menu "配置crAPI · API安全靶场" "config_crAPI"

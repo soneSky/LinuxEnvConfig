@@ -371,4 +371,4 @@ show_xingrin_status() {
 # 模块注册
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置XingRin" "config_xingrin"
+register_main_menu "配置XingRin · 分布式安全扫描平台" "config_xingrin"

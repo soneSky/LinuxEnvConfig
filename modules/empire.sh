@@ -143,4 +143,4 @@ remove_empire() {
 # 注册菜单
 # ═══════════════════════════════════════════════════════════════
 
-register_main_menu "配置Empire" "config_empire"
+register_main_menu "配置Empire · 后渗透框架" "config_empire"

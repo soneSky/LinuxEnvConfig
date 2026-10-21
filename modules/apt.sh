@@ -286,4 +286,4 @@ init_apt_config() {
     esac
 }
 
-register_main_menu "配置APT源" "config_apt"
+register_main_menu "配置APT源 · 设置系统包管理器镜像源" "config_apt"

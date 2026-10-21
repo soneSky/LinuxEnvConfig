@@ -520,4 +520,4 @@ show_docker_status() {
     echo ""
 }
 
-register_main_menu "配置Docker" "config_docker"
+register_main_menu "配置Docker · 容器环境与代理" "config_docker"

@@ -102,4 +102,4 @@ remove_vulfocus() {
     docker_remove_container_and_image "${VULFOCUS_CONTAINER}" "${VULFOCUS_IMAGE}" "Vulfocus"
 }
 
-register_main_menu "配置Vulfocus" "config_vulfocus"
+register_main_menu "配置Vulfocus · 漏洞测试平台" "config_vulfocus"
