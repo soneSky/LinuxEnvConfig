@@ -27,7 +27,7 @@ set -euo pipefail
 # 版本与项目信息
 # ═══════════════════════════════════════════════════════════════
 
-readonly SCRIPT_VERSION="2.1.0"
+readonly SCRIPT_VERSION="2.1.1"
 readonly SCRIPT_NAME="LinuxEnvConfig"
 readonly REQUIRED_TOOLS=("curl" "wget" "git" "jq" "unzip")
 
