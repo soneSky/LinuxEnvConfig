@@ -30,18 +30,29 @@ show_category_submenu() {
     local items=("$@")
 
     local term_width; term_width=$(get_term_width)
-    local total_width=50
 
-    # 计算最大宽度
+    # 计算内容最大宽度（item 宽度不含前缀，渲染时单独加 2 空格缩进）
     local max_len; max_len=$(str_display_width "$title")
     local item
     for item in "${items[@]}"; do
-        local w; w=$(str_display_width "  $item")
+        local w; w=$(str_display_width "$item")
         [[ $w -gt $max_len ]] && max_len=$w
     done
-    total_width=$((max_len + 8))
-    [[ $total_width -lt 50 ]] && total_width=50
-    [[ $total_width -gt 76 ]] && total_width=76
+
+    # 根据终端宽度动态调整菜单宽度
+    local total_width
+    if [[ $term_width -ge 80 ]]; then
+        total_width=76
+    elif [[ $term_width -ge 60 ]]; then
+        total_width=$((term_width - 4))
+    else
+        total_width=$((term_width - 2))
+    fi
+
+    # 确保能容纳内容
+    local min_width=$((max_len + 8))
+    [[ $total_width -lt $min_width ]] && total_width=$min_width
+    [[ $total_width -lt 40 ]] && total_width=40
 
     local top_border mid_border bottom_border
     ui_set_borders "$total_width"
@@ -59,9 +70,9 @@ show_category_submenu() {
     echo -e "  ${GREEN}│${NC}  ${WHITE}${path_display}${NC}$(printf '%*s' "$padding" ' ')  ${GREEN}│${NC}"
     ui_print_blank_row "$total_width"
 
-    # 渲染 items（items 已包含编号，直接显示）
+    # 渲染 items（items 已包含编号，直接显示；宽度计算不含前缀，与 max_len 保持一致）
     for item in "${items[@]}"; do
-        local item_w; item_w=$(str_display_width "  $item")
+        local item_w; item_w=$(str_display_width "$item")
         local item_pad=$((total_width - 4 - item_w))
         [[ $item_pad -lt 0 ]] && item_pad=0
         echo -e "  ${GREEN}│${NC}  ${BRIGHT_CYAN}${item}${NC}$(printf '%*s' "$item_pad" ' ')${GREEN}│${NC}"
@@ -100,11 +111,11 @@ menu_category_base() {
 
     while true; do
         show_category_submenu "① 基础环境配置" \
-            "5. ${items[4]}" \
-            "4. ${items[3]}" \
-            "3. ${items[2]}" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
+            "3. ${items[2]}" \
+            "4. ${items[3]}" \
+            "5. ${items[4]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -140,8 +151,8 @@ menu_category_recon() {
 
     while true; do
         show_category_submenu "② 信息收集侦察" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -185,12 +196,12 @@ menu_category_exploit() {
 
     while true; do
         show_category_submenu "③ 漏洞利用平台" \
-            "6. ${items[5]}" \
-            "5. ${items[4]}" \
-            "4. ${items[3]}" \
-            "3. ${items[2]}" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
+            "3. ${items[2]}" \
+            "4. ${items[3]}" \
+            "5. ${items[4]}" \
+            "6. ${items[5]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -228,9 +239,9 @@ menu_category_scan() {
 
     while true; do
         show_category_submenu "④ 自动化扫描" \
-            "3. ${items[2]}" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
+            "3. ${items[2]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -268,9 +279,9 @@ menu_category_lab() {
 
     while true; do
         show_category_submenu "⑤ 靶场演练平台" \
-            "3. ${items[2]}" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
+            "3. ${items[2]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -308,9 +319,9 @@ menu_category_defense() {
 
     while true; do
         show_category_submenu "⑥ 防御监控类" \
-            "3. ${items[2]}" \
-            "2. ${items[1]}" \
             "1. ${items[0]}" \
+            "2. ${items[1]}" \
+            "3. ${items[2]}" \
             "0. 返回主菜单"
 
         [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
@@ -344,8 +355,17 @@ menu_category_nav() {
         local cols=2
         [[ $term_width -lt 75 ]] && cols=1
 
-        local total_width=66
-        [[ $cols -eq 1 ]] && total_width=54
+        # 根据终端宽度动态调整主菜单宽度
+        local total_width
+        if [[ $term_width -ge 80 ]]; then
+            total_width=76
+        elif [[ $term_width -ge 60 ]]; then
+            total_width=$((term_width - 4))
+        else
+            total_width=$((term_width - 2))
+        fi
+        # 确保最小宽度能容纳六阶段表格
+        [[ $total_width -lt 60 ]] && total_width=60
 
         local top_border mid_border bottom_border
         ui_set_borders "$total_width"
