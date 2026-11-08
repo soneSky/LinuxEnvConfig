@@ -420,25 +420,60 @@ menu_category_nav() {
             "$GRAY"
         )
 
-        # ── 绘制六行表格（确保每行右侧│完全对齐）─────────────────
+        # ── 绘制六行表格（按列对齐）────────────────────────────
         local inner_w=$(( total_width - 4 ))   # 两个 │ 之间的总字符数
-        local sep=" │ "                          # 中间分隔符
 
-        local i
+        # 预计算各列最大宽度
+        local max_name=0 max_desc=0 i
+        for ((i=0; i<6; i++)); do
+            local nw; nw=$(str_display_width "${PHASE_NUMS[$i]} ${PHASE_NAMES[$i]}")
+            [[ $nw -gt $max_name ]] && max_name=$nw
+            local dw; dw=$(str_display_width "${PHASE_DESCS[$i]}")
+            [[ $dw -gt $max_desc ]] && max_desc=$dw
+        done
+
+        # 列宽分配：名称列 + 描述列 + 模块数列（固定约10字符）
+        local col1_w=$max_name
+        local col3_w=10
+        local col2_w=$(( inner_w - col1_w - col3_w - 6 ))  # 6 = 两个 " │ " 分隔符
+        # 如果描述列太窄，压缩名称列
+        if [[ $col2_w -lt 10 ]]; then
+            col1_w=$(( inner_w - col3_w - 10 - 6 ))
+            col2_w=10
+        fi
+
         for ((i=0; i<6; i++)); do
             local icon="${PHASE_COLORS[$i]}"
             local num="${PHASE_NUMS[$i]}"
             local name="${PHASE_NAMES[$i]}"
             local desc="${PHASE_DESCS[$i]}"
             local mods="${PHASE_MODULES[$i]}"
-
-            # 计算模块数量，用 [N个模块] 替代完整列表避免溢出
             local mod_count; mod_count=$(echo "$mods" | tr ',' '\n' | wc -l)
 
-            # 构建内容字符串（不含两端的 │）
-            local content="${icon}${num} ${name}${sep}${desc}  [${mod_count}个模块]"
+            # 第一列：编号+名称（左对齐，填充到 col1_w）
+            local col1="${icon}${num} ${name}"
+            local c1w; c1w=$(str_display_width "$col1")
+            local c1pad=$((col1_w - c1w))
+            [[ $c1pad -lt 0 ]] && c1pad=0
+            col1="${col1}$(printf '%*s' "$c1pad" ' ')"
+
+            # 第二列：描述（左对齐，填充到 col2_w）
+            local col2="$desc"
+            local c2w; c2w=$(str_display_width "$col2")
+            local c2pad=$((col2_w - c2w))
+            [[ $c2pad -lt 0 ]] && c2pad=0
+            col2="${col2}$(printf '%*s' "$c2pad" ' ')"
+
+            # 第三列：模块数（固定格式，右对齐到 col3_w）
+            local col3="[${mod_count}个模块]"
+            local c3w; c3w=$(str_display_width "$col3")
+            local c3pad=$((col3_w - c3w))
+            [[ $c3pad -lt 0 ]] && c3pad=0
+            col3="$(printf '%*s' "$c3pad" ' ')${col3}"
+
+            # 组合三列
+            local content="${col1} │ ${col2} │ ${col3}"
             local cw; cw=$(str_display_width "$content")
-            # 右填充到 inner_w
             local pad=$(( inner_w - cw ))
             [[ $pad -lt 0 ]] && pad=0
             local padded="${content}$(printf '%*s' "$pad" ' ')"
