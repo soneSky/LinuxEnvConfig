@@ -366,23 +366,19 @@ main() {
     init_config
     lec_enable_farewell
 
-    # 使用功能模块分类导航作为主菜单
-    while true; do
-        if ! declare -f menu_category_nav > /dev/null; then
-            msg_error "分类导航模块未加载，回退到默认主菜单"
-            local choice
+    # 使用功能模块分类导航作为主菜单（内部自循环，按 q 退出）
+    if declare -f menu_category_nav > /dev/null; then
+        menu_category_nav
+    else
+        msg_error "分类导航模块未加载，回退到默认主菜单"
+        local choice
+        while true; do
             show_main_menu
             msg_prompt "请选择操作 [1-${#MAIN_MENU_ITEMS[@]}, q退出]"
             [[ $choice == "q" || $choice == "Q" ]] && break
             handle_main_menu "$choice" || true
-            continue
-        fi
-
-        menu_category_nav
-        local nav_ret=$?
-        # menu_category_nav 返回 0 表示用户选择退出
-        [[ $nav_ret -eq 0 ]] && break
-    done
+        done
+    fi
 }
 
 main "$@"
