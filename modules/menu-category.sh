@@ -41,8 +41,8 @@ menu_category_base() {
 menu_category_recon() {
     while true; do
         show_submenu "② 信息收集侦察" \
-            "1. 配置ARL · 灯塔资产侦察系统" \
             "2. 配置ScopeSentry · 分布式资产侦察管理" \
+            "1. 配置ARL · 灯塔资产侦察系统" \
             "0. 返回主菜单"
         [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
         handle_main_menu "$choice" || true
@@ -109,7 +109,8 @@ menu_category_nav() {
     local cols=2
     [[ $term_width -lt 75 ]] && cols=1
 
-    local total_width=72
+    # 总宽度：两列各30字符 + 中间间隔4 + 两侧边距各2 = 66
+    local total_width=66
     [[ $cols -eq 1 ]] && total_width=54
 
     local top_border mid_border bottom_border
@@ -122,14 +123,21 @@ menu_category_nav() {
     local title="${BOLD}${BRIGHT_GREEN}⚔  LEC 功能模块分类导航${NC}"
     ui_print_centered_row "$total_width" "${BOLD}${BRIGHT_GREEN}" "$title"
 
-    local desc="按渗透测试生命周期六阶段组织全部 $((${#MAIN_MENU_ITEMS[@]})) 个功能模块"
+    local total_modules=${#MAIN_MENU_ITEMS[@]}
+    local desc="按渗透测试生命周期六阶段组织全部 ${total_modules} 个功能模块"
     local tw; tw=$(str_display_width "$desc")
     local pad; pad=$(( (total_width - 2 - tw) / 2 ))
     [[ $pad -lt 0 ]] && pad=0
     echo -e "  ${GREEN}│${NC}$(printf '%*s' "$pad" ' ')${GRAY}${desc}${NC}$(printf '%*s' "$pad" ' ')${GREEN}│${NC}"
     echo -e "  ${GREEN}${mid_border}${NC}"
 
-    # 六个阶段数据
+    # ── 六阶段数据（固定宽度行）──────────────────────────────
+    # 每行结构：│ {图标}{编号} {名称}    │ {描述}              │ {模块列表}   │
+    # 列宽：左列8字符标题 + 中列26字符描述 + 右列剩余模块
+    local card_inner=$((total_width - 4))   # 内部可用宽度（去掉两侧│）
+    local left_col_w=12                     # 左侧：编号+名称
+    local right_col_w=$((card_inner - left_col_w - 2))  # 右侧：描述+模块
+
     local -a PHASE_NUMS=("①" "②" "③" "④" "⑤" "⑥")
     local -a PHASE_NAMES=(
         "基础环境配置"
@@ -140,7 +148,7 @@ menu_category_nav() {
         "防御监控类"
     )
     local -a PHASE_DESCS=(
-        "系统初始化 · Java/Python/Docker运行时"
+        "系统初始化 · Java/Python/Docker"
         "资产发现 · 子域名/端口/指纹/暴露面"
         "渗透执行 · 框架/会话/后渗透/C2"
         "漏洞扫描 · Web应用/源代码/微服务"
@@ -148,12 +156,12 @@ menu_category_nav() {
         "蓝队视角 · 蜜罐/OCR/终端效率"
     )
     local -a PHASE_MODULES=(
-        "basic, apt, jdk, miniconda3, docker"
-        "arl, scopesentry"
-        "metasploit, viper, empire, dnscat2, beef, bluelotus"
-        "awvs, deepaudit, xingrin"
-        "vulfocus, ctfd, crapi"
-        "hfish, ocr-api, ohmyzsh"
+        "basic,apt,jdk,miniconda3,docker"
+        "arl,scopesentry"
+        "metasploit,viper,empire,dnscat2,beef,bluelotus"
+        "awvs,deepaudit,xingrin"
+        "vulfocus,ctfd,crapi"
+        "hfish,ocr-api,ohmyzsh"
     )
     local -a PHASE_HANDLERS=(
         "menu_category_base"
@@ -172,60 +180,28 @@ menu_category_nav() {
         "$GRAY"
     )
 
-    if [[ $cols -eq 2 ]]; then
-        # 两列布局：3行×2列
-        local i
-        for ((i=0; i<6; i+=2)); do
-            local line="  ${GREEN}│${NC}  "
-            local col
-            for ((col=0; col<2; col++)); do
-                local idx=$((i + col))
-                local icon="${PHASE_COLORS[$idx]}"
-                local num="${PHASE_NUMS[$idx]}"
-                local name="${PHASE_NAMES[$idx]}"
-                local desc="${PHASE_DESCS[$idx]}"
-                local mods="${PHASE_MODULES[$idx]}"
+    # ── 绘制六行表格 ──────────────────────────────────────
+    local i
+    for ((i=0; i<6; i++)); do
+        local icon="${PHASE_COLORS[$i]}"
+        local num="${PHASE_NUMS[$i]}"
+        local name="${PHASE_NAMES[$i]}"
+        local desc="${PHASE_DESCS[$i]}"
+        local mods="${PHASE_MODULES[$i]}"
 
-                local card_w=32
-                local r_line="${icon}${num} ${name}${NC}"
-                local r_w; r_w=$(str_display_width "$r_line")
-                local r_pad=$((card_w - r_w))
-                [[ $r_pad -lt 1 ]] && r_pad=1
+        # 构建各段
+        local left_part="${icon}${num}  ${name}"
+        local right_part="${desc}  │  ${GRAY}modules: ${mods}${NC}"
 
-                line+="${GREEN}╭${GREEN}$(printf '─%.0s' $(seq 1 $card_w))${GREEN}╮${NC}  "
-                # 第一行：标题
-                line+="${GREEN}│${NC}${r_line}$(printf '%*s' "$r_pad" ' ')"
-                line+="${GREEN} │${NC}  "
-                # 第二行：描述
-                local d_pad=$((card_w - $(str_display_width "   $desc") - 1))
-                [[ $d_pad -lt 0 ]] && d_pad=0
-                line+="${GREEN}│${NC}   ${GRAY}$desc${NC}$(printf '%*s' "$d_pad" ' ')"
-                line+="${GREEN} │${NC}  "
-                # 第三行：模块
-                local m_pad=$((card_w - $(str_display_width "   modules: $mods") - 1))
-                [[ $m_pad -lt 0 ]] && m_pad=0
-                line+="${GREEN}│${NC}   ${GRAY}modules: ${mods}${NC}$(printf '%*s' "$m_pad" ' ')"
-                line+="${GREEN} │${NC}  "
-                # 底边框
-                line+="${GREEN}│${NC}$(printf '%*s' "$card_w" ' ')${GREEN}│${NC}  "
-            done
-            line+="${GREEN}╰${GREEN}$(printf '─%.0s' $(seq 1 $((card_w * 2 + 4))))${GREEN}╯${NC}"
-            echo -e "$line"
-        done
-    else
-        # 单列布局
-        local i
-        for ((i=0; i<6; i++)); do
-            local icon="${PHASE_COLORS[$i]}"
-            local num="${PHASE_NUMS[$i]}"
-            local name="${PHASE_NAMES[$i]}"
-            local desc="${PHASE_DESCS[$i]}"
-            local mods="${PHASE_MODULES[$i]}"
-            echo -e "  ${GREEN}│${NC}  ${icon}${num} ${name}${NC}  ${GRAY}— ${desc}${NC}"
-            echo -e "  ${GREEN}│${NC}  ${GRAY}modules: ${mods}${NC}"
-        done
-        echo -e "  ${GREEN}│${NC}$(printf '%*s' "$((total_width - 2))" ' ')${GREEN}│${NC}"
-    fi
+        local left_w; left_w=$(str_display_width "$left_part")
+        local right_w; right_w=$(str_display_width "$right_part")
+
+        # 填充到固定列宽
+        local left_padded="${left_part}$(printf '%*s' $((left_col_w - left_w)) ' ')"
+        local right_padded="${right_part}$(printf '%*s' $((right_col_w - right_w)) ' ')"
+
+        echo -e "  ${GREEN}│${NC}  ${left_padded}${NC}${GREEN}│${NC}  ${right_padded}${GREEN}│${NC}"
+    done
 
     echo -e "  ${GREEN}${mid_border}${NC}"
 
@@ -234,7 +210,7 @@ menu_category_nav() {
     echo -e "  ${GREEN}${bottom_border}${NC}"
     echo ""
 
-    # 读取用户选择并跳转
+    # ── 读取用户选择 ──────────────────────────────────────
     local cat_choice
     msg_prompt "请选择阶段 [1-6, q退出]"
     case "$cat_choice" in
