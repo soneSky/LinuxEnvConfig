@@ -126,30 +126,6 @@ load_all_modules() {
 
 load_all_modules
 
-# ── 将分类导航菜单插入主菜单首位 ─────────────────────────────
-_register_first_menu() {
-    local target="📂 功能模块分类导航"
-    local handler="menu_category_nav"
-    local found=false i item
-    for ((i=0; i<${#MAIN_MENU_ITEMS[@]}; i++)); do
-        if [[ "${MAIN_MENU_ITEMS[$i]}" == "$target" ]]; then
-            local saved_item="${MAIN_MENU_ITEMS[$i]}"
-            local saved_handler="${MAIN_MENU_HANDLERS[$i]}"
-            unset 'MAIN_MENU_ITEMS[i]' 'MAIN_MENU_HANDLERS[i]'
-            MAIN_MENU_ITEMS=("${MAIN_MENU_ITEMS[@]}")
-            MAIN_MENU_HANDLERS=("${MAIN_MENU_HANDLERS[@]}")
-            MAIN_MENU_ITEMS=("$saved_item" "${MAIN_MENU_ITEMS[@]}")
-            MAIN_MENU_HANDLERS=("$saved_handler" "${MAIN_MENU_HANDLERS[@]}")
-            found=true
-            break
-        fi
-    done
-    if [[ "$found" == false ]]; then
-        msg_warning "未找到分类导航菜单，已跳过"
-    fi
-}
-_register_first_menu
-
 # ═══════════════════════════════════════════════════════════════
 # 环境预配置
 # ═══════════════════════════════════════════════════════════════
@@ -390,17 +366,22 @@ main() {
     init_config
     lec_enable_farewell
 
-    local choice
+    # 使用功能模块分类导航作为主菜单
     while true; do
-        show_main_menu
-
-        msg_prompt "请选择操作 [1-${#MAIN_MENU_ITEMS[@]}, q退出]"
-
-        if [[ $choice == "q" || $choice == "Q" ]]; then
-            break
+        if ! declare -f menu_category_nav > /dev/null; then
+            msg_error "分类导航模块未加载，回退到默认主菜单"
+            local choice
+            show_main_menu
+            msg_prompt "请选择操作 [1-${#MAIN_MENU_ITEMS[@]}, q退出]"
+            [[ $choice == "q" || $choice == "Q" ]] && break
+            handle_main_menu "$choice" || true
+            continue
         fi
 
-        handle_main_menu "$choice" || true
+        menu_category_nav
+        local nav_ret=$?
+        # menu_category_nav 返回 0 表示用户选择退出
+        [[ $nav_ret -eq 0 ]] && break
     done
 }
 
