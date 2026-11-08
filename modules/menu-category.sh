@@ -432,8 +432,11 @@ menu_category_nav() {
             local desc="${PHASE_DESCS[$i]}"
             local mods="${PHASE_MODULES[$i]}"
 
+            # 计算模块数量，用 [N个模块] 替代完整列表避免溢出
+            local mod_count; mod_count=$(echo "$mods" | tr ',' '\n' | wc -l)
+
             # 构建内容字符串（不含两端的 │）
-            local content="${icon}${num}  ${name}${sep}${desc}  modules: ${mods}"
+            local content="${icon}${num} ${name}${sep}${desc}  [${mod_count}个模块]"
             local cw; cw=$(str_display_width "$content")
             # 右填充到 inner_w
             local pad=$(( inner_w - cw ))
