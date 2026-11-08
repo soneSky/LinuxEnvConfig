@@ -131,13 +131,7 @@ menu_category_nav() {
     echo -e "  ${GREEN}│${NC}$(printf '%*s' "$pad" ' ')${GRAY}${desc}${NC}$(printf '%*s' "$pad" ' ')${GREEN}│${NC}"
     echo -e "  ${GREEN}${mid_border}${NC}"
 
-    # ── 六阶段数据（固定宽度行）──────────────────────────────
-    # 每行结构：│ {图标}{编号} {名称}    │ {描述}              │ {模块列表}   │
-    # 列宽：左列8字符标题 + 中列26字符描述 + 右列剩余模块
-    local card_inner=$((total_width - 4))   # 内部可用宽度（去掉两侧│）
-    local left_col_w=12                     # 左侧：编号+名称
-    local right_col_w=$((card_inner - left_col_w - 2))  # 右侧：描述+模块
-
+    # ── 六阶段数据 ─────────────────────────────────────────
     local -a PHASE_NUMS=("①" "②" "③" "④" "⑤" "⑥")
     local -a PHASE_NAMES=(
         "基础环境配置"
@@ -180,7 +174,13 @@ menu_category_nav() {
         "$GRAY"
     )
 
-    # ── 绘制六行表格 ──────────────────────────────────────
+    # ── 绘制六行表格（确保每行右侧│完全对齐）─────────────────
+    # 行格式：  "  │ {left} │ {desc} modules: {mods} │"
+    # 目标：整行（不含两侧缩进"  "）宽度 = total_width - 2
+    # 即：  │ {内容} │  其中 {内容} 长度 = total_width - 4
+    local inner_w=$(( total_width - 4 ))   # 两个 │ 之间的总字符数
+    local sep=" │ "                          # 中间分隔符
+
     local i
     for ((i=0; i<6; i++)); do
         local icon="${PHASE_COLORS[$i]}"
@@ -189,18 +189,15 @@ menu_category_nav() {
         local desc="${PHASE_DESCS[$i]}"
         local mods="${PHASE_MODULES[$i]}"
 
-        # 构建各段
-        local left_part="${icon}${num}  ${name}"
-        local right_part="${desc}  │  ${GRAY}modules: ${mods}${NC}"
+        # 构建内容字符串（不含两端的 │）
+        local content="${icon}${num}  ${name}${sep}${desc}  modules: ${mods}"
+        local cw; cw=$(str_display_width "$content")
+        # 右填充到 inner_w
+        local pad=$(( inner_w - cw ))
+        [[ $pad -lt 0 ]] && pad=0
+        local padded="${content}$(printf '%*s' "$pad" ' ')"
 
-        local left_w; left_w=$(str_display_width "$left_part")
-        local right_w; right_w=$(str_display_width "$right_part")
-
-        # 填充到固定列宽
-        local left_padded="${left_part}$(printf '%*s' $((left_col_w - left_w)) ' ')"
-        local right_padded="${right_part}$(printf '%*s' $((right_col_w - right_w)) ' ')"
-
-        echo -e "  ${GREEN}│${NC}  ${left_padded}${NC}${GREEN}│${NC}  ${right_padded}${GREEN}│${NC}"
+        echo -e "  ${GREEN}│${NC}${padded}${GREEN}│${NC}"
     done
 
     echo -e "  ${GREEN}${mid_border}${NC}"
