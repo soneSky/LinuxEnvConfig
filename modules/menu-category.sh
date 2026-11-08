@@ -21,6 +21,64 @@
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ═══════════════════════════════════════════════════════════════
+# 分类子菜单渲染（不自动编号，直接使用 items 中的编号）
+# ═══════════════════════════════════════════════════════════════
+
+show_category_submenu() {
+    local title="$1"
+    shift
+    local items=("$@")
+
+    local term_width; term_width=$(get_term_width)
+    local total_width=50
+
+    # 计算最大宽度
+    local max_len; max_len=$(str_display_width "$title")
+    local item
+    for item in "${items[@]}"; do
+        local w; w=$(str_display_width "  $item")
+        [[ $w -gt $max_len ]] && max_len=$w
+    done
+    total_width=$((max_len + 8))
+    [[ $total_width -lt 50 ]] && total_width=50
+    [[ $total_width -gt 76 ]] && total_width=76
+
+    local top_border mid_border bottom_border
+    ui_set_borders "$total_width"
+
+    clear_screen
+    echo ""
+    echo -e "  ${GREEN}${top_border}${NC}"
+    ui_print_centered_row "$total_width" "${BOLD}${BRIGHT_GREEN}" "$title"
+    echo -e "  ${GREEN}${mid_border}${NC}"
+
+    local path_display; path_display=$(_get_menu_path_display)
+    local path_w; path_w=$(str_display_width "$path_display")
+    local padding=$((total_width - 6 - path_w))
+    [[ $padding -lt 0 ]] && padding=0
+    echo -e "  ${GREEN}│${NC}  ${WHITE}${path_display}${NC}$(printf '%*s' "$padding" ' ')  ${GREEN}│${NC}"
+    ui_print_blank_row "$total_width"
+
+    # 渲染 items（items 已包含编号，直接显示）
+    for item in "${items[@]}"; do
+        local item_w; item_w=$(str_display_width "  $item")
+        local item_pad=$((total_width - 4 - item_w))
+        [[ $item_pad -lt 0 ]] && item_pad=0
+        echo -e "  ${GREEN}│${NC}  ${BRIGHT_CYAN}${item}${NC}$(printf '%*s' "$item_pad" ' ')${GREEN}│${NC}"
+    done
+
+    ui_print_blank_row "$total_width"
+    echo -e "  ${GREEN}${mid_border}${NC}"
+
+    ui_print_footer "$total_width" "0. 返回上级菜单" "[q] 退出脚本" "$WHITE" "$BRIGHT_GREEN"
+    echo -e "  ${GREEN}${bottom_border}${NC}"
+    echo ""
+
+    # 读取用户输入（不使用 local，确保调用者能访问 $choice）
+    msg_prompt "请选择操作"
+}
+
+# ═══════════════════════════════════════════════════════════════
 # 阶段子菜单：直接调用模块 handler
 # ═══════════════════════════════════════════════════════════════
 
@@ -41,7 +99,7 @@ menu_category_base() {
     )
 
     while true; do
-        show_submenu "① 基础环境配置" \
+        show_category_submenu "① 基础环境配置" \
             "5. ${items[4]}" \
             "4. ${items[3]}" \
             "3. ${items[2]}" \
@@ -81,7 +139,7 @@ menu_category_recon() {
     )
 
     while true; do
-        show_submenu "② 信息收集侦察" \
+        show_category_submenu "② 信息收集侦察" \
             "2. ${items[1]}" \
             "1. ${items[0]}" \
             "0. 返回主菜单"
@@ -126,7 +184,7 @@ menu_category_exploit() {
     )
 
     while true; do
-        show_submenu "③ 漏洞利用平台" \
+        show_category_submenu "③ 漏洞利用平台" \
             "6. ${items[5]}" \
             "5. ${items[4]}" \
             "4. ${items[3]}" \
@@ -169,7 +227,7 @@ menu_category_scan() {
     )
 
     while true; do
-        show_submenu "④ 自动化扫描" \
+        show_category_submenu "④ 自动化扫描" \
             "3. ${items[2]}" \
             "2. ${items[1]}" \
             "1. ${items[0]}" \
@@ -209,7 +267,7 @@ menu_category_lab() {
     )
 
     while true; do
-        show_submenu "⑤ 靶场演练平台" \
+        show_category_submenu "⑤ 靶场演练平台" \
             "3. ${items[2]}" \
             "2. ${items[1]}" \
             "1. ${items[0]}" \
@@ -249,7 +307,7 @@ menu_category_defense() {
     )
 
     while true; do
-        show_submenu "⑥ 防御监控类" \
+        show_category_submenu "⑥ 防御监控类" \
             "3. ${items[2]}" \
             "2. ${items[1]}" \
             "1. ${items[0]}" \
