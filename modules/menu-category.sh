@@ -339,109 +339,111 @@ menu_category_defense() {
 # ═══════════════════════════════════════════════════════════════
 
 menu_category_nav() {
-    local term_width; term_width=$(get_term_width)
-    local cols=2
-    [[ $term_width -lt 75 ]] && cols=1
+    while true; do
+        local term_width; term_width=$(get_term_width)
+        local cols=2
+        [[ $term_width -lt 75 ]] && cols=1
 
-    local total_width=66
-    [[ $cols -eq 1 ]] && total_width=54
+        local total_width=66
+        [[ $cols -eq 1 ]] && total_width=54
 
-    local top_border mid_border bottom_border
-    ui_set_borders "$total_width"
+        local top_border mid_border bottom_border
+        ui_set_borders "$total_width"
 
-    clear_screen
-    echo ""
-    echo -e "  ${GREEN}${top_border}${NC}"
+        clear_screen
+        echo ""
+        echo -e "  ${GREEN}${top_border}${NC}"
 
-    local title="${BOLD}${BRIGHT_GREEN}⚔  LEC 功能模块分类导航${NC}"
-    ui_print_centered_row "$total_width" "${BOLD}${BRIGHT_GREEN}" "$title"
+        local title="${BOLD}${BRIGHT_GREEN}⚔  LEC 功能模块分类导航${NC}"
+        ui_print_centered_row "$total_width" "${BOLD}${BRIGHT_GREEN}" "$title"
 
-    local total_modules=${#MAIN_MENU_ITEMS[@]}
-    local desc="按渗透测试生命周期六阶段组织全部 ${total_modules} 个功能模块"
-    local tw; tw=$(str_display_width "$desc")
-    local pad; pad=$(( (total_width - 2 - tw) / 2 ))
-    [[ $pad -lt 0 ]] && pad=0
-    echo -e "  ${GREEN}│${NC}$(printf '%*s' "$pad" ' ')${GRAY}${desc}${NC}$(printf '%*s' "$pad" ' ')${GREEN}│${NC}"
-    echo -e "  ${GREEN}${mid_border}${NC}"
-
-    # ── 六阶段数据 ─────────────────────────────────────────
-    local -a PHASE_NUMS=("①" "②" "③" "④" "⑤" "⑥")
-    local -a PHASE_NAMES=(
-        "基础环境配置"
-        "信息收集侦察"
-        "漏洞利用平台"
-        "自动化扫描"
-        "靶场演练平台"
-        "防御监控类"
-    )
-    local -a PHASE_DESCS=(
-        "系统初始化 · Java/Python/Docker"
-        "资产发现 · 子域名/端口/指纹/暴露面"
-        "渗透执行 · 框架/会话/后渗透/C2"
-        "漏洞扫描 · Web应用/源代码/微服务"
-        "技能训练 · 靶场/CTF/API演练"
-        "蓝队视角 · 蜜罐/OCR/终端效率"
-    )
-    local -a PHASE_MODULES=(
-        "basic,apt,jdk,miniconda3,docker"
-        "arl,scopesentry"
-        "metasploit,viper,empire,dnscat2,beef,bluelotus"
-        "awvs,deepaudit,xingrin"
-        "vulfocus,ctfd,crapi"
-        "hfish,ocr-api,ohmyzsh"
-    )
-    local -a PHASE_COLORS=(
-        "$BRIGHT_GREEN"
-        "$BRIGHT_CYAN"
-        "$BRIGHT_YELLOW"
-        "$BRIGHT_MAGENTA"
-        "$BRIGHT_BLUE"
-        "$GRAY"
-    )
-
-    # ── 绘制六行表格（确保每行右侧│完全对齐）─────────────────
-    local inner_w=$(( total_width - 4 ))   # 两个 │ 之间的总字符数
-    local sep=" │ "                          # 中间分隔符
-
-    local i
-    for ((i=0; i<6; i++)); do
-        local icon="${PHASE_COLORS[$i]}"
-        local num="${PHASE_NUMS[$i]}"
-        local name="${PHASE_NAMES[$i]}"
-        local desc="${PHASE_DESCS[$i]}"
-        local mods="${PHASE_MODULES[$i]}"
-
-        # 构建内容字符串（不含两端的 │）
-        local content="${icon}${num}  ${name}${sep}${desc}  modules: ${mods}"
-        local cw; cw=$(str_display_width "$content")
-        # 右填充到 inner_w
-        local pad=$(( inner_w - cw ))
+        local total_modules=${#MAIN_MENU_ITEMS[@]}
+        local desc="按渗透测试生命周期六阶段组织全部 ${total_modules} 个功能模块"
+        local tw; tw=$(str_display_width "$desc")
+        local pad; pad=$(( (total_width - 2 - tw) / 2 ))
         [[ $pad -lt 0 ]] && pad=0
-        local padded="${content}$(printf '%*s' "$pad" ' ')"
+        echo -e "  ${GREEN}│${NC}$(printf '%*s' "$pad" ' ')${GRAY}${desc}${NC}$(printf '%*s' "$pad" ' ')${GREEN}│${NC}"
+        echo -e "  ${GREEN}${mid_border}${NC}"
 
-        echo -e "  ${GREEN}│${NC}${padded}${GREEN}│${NC}"
+        # ── 六阶段数据 ─────────────────────────────────────────
+        local -a PHASE_NUMS=("①" "②" "③" "④" "⑤" "⑥")
+        local -a PHASE_NAMES=(
+            "基础环境配置"
+            "信息收集侦察"
+            "漏洞利用平台"
+            "自动化扫描"
+            "靶场演练平台"
+            "防御监控类"
+        )
+        local -a PHASE_DESCS=(
+            "系统初始化 · Java/Python/Docker"
+            "资产发现 · 子域名/端口/指纹/暴露面"
+            "渗透执行 · 框架/会话/后渗透/C2"
+            "漏洞扫描 · Web应用/源代码/微服务"
+            "技能训练 · 靶场/CTF/API演练"
+            "蓝队视角 · 蜜罐/OCR/终端效率"
+        )
+        local -a PHASE_MODULES=(
+            "basic,apt,jdk,miniconda3,docker"
+            "arl,scopesentry"
+            "metasploit,viper,empire,dnscat2,beef,bluelotus"
+            "awvs,deepaudit,xingrin"
+            "vulfocus,ctfd,crapi"
+            "hfish,ocr-api,ohmyzsh"
+        )
+        local -a PHASE_COLORS=(
+            "$BRIGHT_GREEN"
+            "$BRIGHT_CYAN"
+            "$BRIGHT_YELLOW"
+            "$BRIGHT_MAGENTA"
+            "$BRIGHT_BLUE"
+            "$GRAY"
+        )
+
+        # ── 绘制六行表格（确保每行右侧│完全对齐）─────────────────
+        local inner_w=$(( total_width - 4 ))   # 两个 │ 之间的总字符数
+        local sep=" │ "                          # 中间分隔符
+
+        local i
+        for ((i=0; i<6; i++)); do
+            local icon="${PHASE_COLORS[$i]}"
+            local num="${PHASE_NUMS[$i]}"
+            local name="${PHASE_NAMES[$i]}"
+            local desc="${PHASE_DESCS[$i]}"
+            local mods="${PHASE_MODULES[$i]}"
+
+            # 构建内容字符串（不含两端的 │）
+            local content="${icon}${num}  ${name}${sep}${desc}  modules: ${mods}"
+            local cw; cw=$(str_display_width "$content")
+            # 右填充到 inner_w
+            local pad=$(( inner_w - cw ))
+            [[ $pad -lt 0 ]] && pad=0
+            local padded="${content}$(printf '%*s' "$pad" ' ')"
+
+            echo -e "  ${GREEN}│${NC}${padded}${GREEN}│${NC}"
+        done
+
+        echo -e "  ${GREEN}${mid_border}${NC}"
+
+        local path_display; path_display=$(_get_menu_path_display)
+        ui_print_footer "$total_width" "$path_display" "[q] 退出脚本" "$WHITE" "$BRIGHT_GREEN"
+        echo -e "  ${GREEN}${bottom_border}${NC}"
+        echo ""
+
+        # ── 读取用户选择 ──────────────────────────────────────
+        local cat_choice
+        msg_prompt "请选择阶段 [1-6, q退出]" cat_choice
+        case "$cat_choice" in
+            1) menu_category_base ;;
+            2) menu_category_recon ;;
+            3) menu_category_exploit ;;
+            4) menu_category_scan ;;
+            5) menu_category_lab ;;
+            6) menu_category_defense ;;
+            [qQ]) return 0 ;;
+            *) msg_error "无效选项"; pause ;;
+        esac
     done
-
-    echo -e "  ${GREEN}${mid_border}${NC}"
-
-    local path_display; path_display=$(_get_menu_path_display)
-    ui_print_footer "$total_width" "$path_display" "[q] 退出脚本" "$WHITE" "$BRIGHT_GREEN"
-    echo -e "  ${GREEN}${bottom_border}${NC}"
-    echo ""
-
-    # ── 读取用户选择 ──────────────────────────────────────
-    local cat_choice
-    msg_prompt "请选择阶段 [1-6, q退出]"
-    case "$cat_choice" in
-        1) menu_category_base ;;
-        2) menu_category_recon ;;
-        3) menu_category_exploit ;;
-        4) menu_category_scan ;;
-        5) menu_category_lab ;;
-        6) menu_category_defense ;;
-        [qQ]) return 0 ;;
-        *) msg_error "无效选项"; pause; menu_category_nav ;;
-    esac
 }
 
 # ═══════════════════════════════════════════════════════════════
