@@ -126,6 +126,30 @@ load_all_modules() {
 
 load_all_modules
 
+# ── 将分类导航菜单插入主菜单首位 ─────────────────────────────
+_register_first_menu() {
+    local target="📂 功能模块分类导航"
+    local handler="menu_category_nav"
+    local found=false i item
+    for ((i=0; i<${#MAIN_MENU_ITEMS[@]}; i++)); do
+        if [[ "${MAIN_MENU_ITEMS[$i]}" == "$target" ]]; then
+            local saved_item="${MAIN_MENU_ITEMS[$i]}"
+            local saved_handler="${MAIN_MENU_HANDLERS[$i]}"
+            unset 'MAIN_MENU_ITEMS[i]' 'MAIN_MENU_HANDLERS[i]'
+            MAIN_MENU_ITEMS=("${MAIN_MENU_ITEMS[@]}")
+            MAIN_MENU_HANDLERS=("${MAIN_MENU_HANDLERS[@]}")
+            MAIN_MENU_ITEMS=("$saved_item" "${MAIN_MENU_ITEMS[@]}")
+            MAIN_MENU_HANDLERS=("$saved_handler" "${MAIN_MENU_HANDLERS[@]}")
+            found=true
+            break
+        fi
+    done
+    if [[ "$found" == false ]]; then
+        msg_warning "未找到分类导航菜单，已跳过"
+    fi
+}
+_register_first_menu
+
 # ═══════════════════════════════════════════════════════════════
 # 环境预配置
 # ═══════════════════════════════════════════════════════════════
