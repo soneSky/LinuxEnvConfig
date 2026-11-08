@@ -15,93 +15,269 @@
 # limitations under the License.
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  📝 模块描述 : 功能模块分类导航菜单 — 按渗透测试生命周期六阶段分组展示
+#  📝 模块描述 : 功能模块分类导航 — 主菜单直接显示六阶段分类
 #  📁 文件路径 : modules/menu-category.sh
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 # ═══════════════════════════════════════════════════════════════
-# 各阶段子菜单跳转函数
+# 阶段子菜单：直接调用模块 handler
 # ═══════════════════════════════════════════════════════════════
 
 menu_category_base() {
+    local items=(
+        "基础配置 · 系统基础环境与工具优化"
+        "配置APT源 · 设置系统包管理器镜像源"
+        "配置Docker · 容器环境与代理"
+        "配置JDK · Java运行环境"
+        "配置Miniconda3 · Python环境管理"
+    )
+    local handlers=(
+        "config_basic"
+        "config_apt"
+        "config_docker"
+        "config_jdk"
+        "config_miniconda3"
+    )
+
     while true; do
         show_submenu "① 基础环境配置" \
-            "5. 配置JDK · Java运行环境" \
-            "4. 配置Miniconda3 · Python环境管理" \
-            "3. 配置Docker · 容器环境与代理" \
-            "2. 配置APT源 · 设置系统包管理器镜像源" \
-            "1. 基础配置 · 系统基础环境与工具优化" \
+            "5. ${items[4]}" \
+            "4. ${items[3]}" \
+            "3. ${items[2]}" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 menu_category_recon() {
+    local items=(
+        "配置ARL · 灯塔资产侦察系统"
+        "配置ScopeSentry · 分布式资产侦察管理"
+    )
+    local handlers=(
+        "config_arl"
+        "config_scopesentry"
+    )
+
     while true; do
         show_submenu "② 信息收集侦察" \
-            "2. 配置ScopeSentry · 分布式资产侦察管理" \
-            "1. 配置ARL · 灯塔资产侦察系统" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 menu_category_exploit() {
+    local items=(
+        "配置BeEF · 浏览器渗透框架"
+        "配置Dnscat2 · DNS隧道"
+        "配置Metasploit · 渗透测试框架"
+        "配置Viper · 图形化渗透测试框架"
+        "配置Empire · 后渗透框架"
+        "配置BlueLotus · XSS接收平台"
+    )
+    local handlers=(
+        "config_beef"
+        "config_dnscat2"
+        "config_metasploit"
+        "config_viper"
+        "config_empire"
+        "config_bluelotus"
+    )
+
     while true; do
         show_submenu "③ 漏洞利用平台" \
-            "6. 配置BlueLotus · XSS接收平台" \
-            "5. 配置Empire · 后渗透框架" \
-            "4. 配置Viper · 图形化渗透测试框架" \
-            "3. 配置Metasploit · 渗透测试框架" \
-            "2. 配置Dnscat2 · DNS隧道" \
-            "1. 配置BeEF · 浏览器渗透框架" \
+            "6. ${items[5]}" \
+            "5. ${items[4]}" \
+            "4. ${items[3]}" \
+            "3. ${items[2]}" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 menu_category_scan() {
+    local items=(
+        "配置AWVS · 漏洞扫描器"
+        "配置DeepAudit · 深度审计分析"
+        "配置XingRin · 分布式安全扫描平台"
+    )
+    local handlers=(
+        "config_awvs"
+        "config_deepaudit"
+        "config_xingrin"
+    )
+
     while true; do
         show_submenu "④ 自动化扫描" \
-            "3. 配置XingRin · 分布式安全扫描平台" \
-            "2. 配置DeepAudit · 深度审计分析" \
-            "1. 配置AWVS · 漏洞扫描器" \
+            "3. ${items[2]}" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 menu_category_lab() {
+    local items=(
+        "配置Vulfocus · 漏洞测试平台"
+        "配置CTFd · CTF竞赛框架"
+        "配置crAPI · API安全靶场"
+    )
+    local handlers=(
+        "config_vulfocus"
+        "config_ctfd"
+        "config_crAPI"
+    )
+
     while true; do
         show_submenu "⑤ 靶场演练平台" \
-            "3. 配置crAPI · API安全靶场" \
-            "2. 配置CTFd · CTF竞赛框架" \
-            "1. 配置Vulfocus · 漏洞测试平台" \
+            "3. ${items[2]}" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 menu_category_defense() {
+    local items=(
+        "配置HFish · 蜜罐系统"
+        "配置OCR-API · 文字识别服务"
+        "配置OhMyZsh · 终端美化与增强"
+    )
+    local handlers=(
+        "config_hfish"
+        "config_ocr_api_server"
+        "config_ohmyzsh"
+    )
+
     while true; do
         show_submenu "⑥ 防御监控类" \
-            "3. 配置OhMyZsh · 终端美化与增强" \
-            "2. 配置OCR-API · 文字识别服务" \
-            "1. 配置HFish · 蜜罐系统" \
+            "3. ${items[2]}" \
+            "2. ${items[1]}" \
+            "1. ${items[0]}" \
             "0. 返回主菜单"
-        [[ "$choice" == "0" || "$choice" == "q" || "$choice" == "Q" ]] && break
-        handle_main_menu "$choice" || true
+
+        [[ "$choice" == "q" || "$choice" == "Q" ]] && exit 0
+        [[ "$choice" == "0" ]] && break
+
+        local idx=$((choice - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#handlers[@]} ]]; then
+            local handler="${handlers[$idx]}"
+            if declare -f "$handler" > /dev/null; then
+                push_path "${items[$idx]}"
+                $handler
+                pop_path
+            else
+                msg_error "处理函数未找到: $handler"
+                pause
+            fi
+        else
+            msg_error "选项超出范围 (1-${#handlers[@]})"
+            pause
+        fi
     done
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 分类导航主菜单
+# 分类导航主菜单（直接显示，替代原主菜单）
 # ═══════════════════════════════════════════════════════════════
 
 menu_category_nav() {
@@ -109,7 +285,6 @@ menu_category_nav() {
     local cols=2
     [[ $term_width -lt 75 ]] && cols=1
 
-    # 总宽度：两列各30字符 + 中间间隔4 + 两侧边距各2 = 66
     local total_width=66
     [[ $cols -eq 1 ]] && total_width=54
 
@@ -157,14 +332,6 @@ menu_category_nav() {
         "vulfocus,ctfd,crapi"
         "hfish,ocr-api,ohmyzsh"
     )
-    local -a PHASE_HANDLERS=(
-        "menu_category_base"
-        "menu_category_recon"
-        "menu_category_exploit"
-        "menu_category_scan"
-        "menu_category_lab"
-        "menu_category_defense"
-    )
     local -a PHASE_COLORS=(
         "$BRIGHT_GREEN"
         "$BRIGHT_CYAN"
@@ -175,9 +342,6 @@ menu_category_nav() {
     )
 
     # ── 绘制六行表格（确保每行右侧│完全对齐）─────────────────
-    # 行格式：  "  │ {left} │ {desc} modules: {mods} │"
-    # 目标：整行（不含两侧缩进"  "）宽度 = total_width - 2
-    # 即：  │ {内容} │  其中 {内容} 长度 = total_width - 4
     local inner_w=$(( total_width - 4 ))   # 两个 │ 之间的总字符数
     local sep=" │ "                          # 中间分隔符
 
@@ -223,6 +387,5 @@ menu_category_nav() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 注册到主菜单（末尾，保证所有其他模块先注册完毕）
+# 注意：不注册到主菜单，由 main.sh 直接调用
 # ═══════════════════════════════════════════════════════════════
-register_main_menu "📂 功能模块分类导航" "menu_category_nav"
