@@ -15,7 +15,7 @@
 # limitations under the License.
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  📝 模块描述 : 灯塔 ARL 资产侦察系统配置模块
+#  📝 模块描述 : 灯塔 ARL-Next 资产侦察系统配置模块
 #  📁 文件路径 : modules/arl.sh
 #  👤 作者信息 : mingy
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -25,18 +25,16 @@
 # ═══════════════════════════════════════════════════════════════
 
 readonly ARL_DIR="/opt/docker_arl"
-readonly ARL_DEFAULT_PORT="5003"
-readonly ARL_RABBITMQ_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/rabbitmq:3.8.19-management-alpine"
-readonly ARL_MONGO_IMAGE="registry.cn-hangzhou.aliyuncs.com/mingy123/mongo:4.0.27"
-readonly ARL_DEFAULT_VERSION="v2.6.3"
-readonly ARL_CONFIG_FILE="${ARL_DIR}/config-docker.yaml"
-readonly ARL_CONTAINER_DICT_DIR="/code/app/dicts"
-readonly ARL_CONTAINER_PATTERN="arl-(web|worker)|arl_(web|worker)"
+readonly ARL_DEFAULT_PORT="5173"
+readonly ARL_WEB_IMAGE="crpi-laul1izptqrf0tkf.cn-beijing.personal.cr.aliyuncs.com/owl234-arl-prod/arl-web:latest"
+readonly ARL_TMP_CONTAINER="arl-temp"
+readonly ARL_COMPOSE_FILE="docker-compose.prod.yml"
+readonly ARL_WEB_CONTAINER="arl-web-prod"
+readonly ARL_MONGO_CONTAINER="arl-mongodb-prod"
+readonly ARL_MONGO_URI="mongodb://admin:admin@127.0.0.1:27017/arl?authSource=admin"
+readonly ARL_CONTAINER_DICT_DIR="/code/backend/app/dicts"
+readonly ARL_CONTAINER_PATTERN="arl-(web|worker|frontend)-prod|arl_(web|worker)"
 readonly ARL_FINGER_GIT_URL="https://gitee.com/yijingsec/ARL-Finger-ADD.git"
-readonly ARL_LATEST_RELEASE_API="https://gitee.com/api/v5/repos/yijingsec/ARL/releases/latest"
-readonly ARL_DOWNLOAD_URL_TEMPLATE="https://gitee.com/yijingsec/ARL/releases/download"
-readonly ARL_DEFAULT_USER="admin"
-readonly ARL_DEFAULT_PASS="arlpass"
 
 # ═══════════════════════════════════════════════════════════════
 # 内部辅助函数
@@ -50,6 +48,79 @@ get_python_command() {
     else
         return 1
     fi
+}
+
+extract_arl_deploy_files() {
+    local image="$1"
+    local dest="$2"
+
+    msg_info "正在拉取 ARL-Next 镜像: ${image}"
+    if ! (set -o pipefail; sudo docker pull "${image}" 2>&1 | sed 's/^/  /'); then
+        msg_error "镜像拉取失败, 请检查网络或镜像地址"
+        return 1
+    fi
+
+    sudo docker rm -f "${ARL_TMP_CONTAINER}" >/dev/null 2>&1 || true
+    if ! sudo docker create --name "${ARL_TMP_CONTAINER}" "${image}" >/dev/null; then
+        msg_error "创建临时容器失败"
+        return 1
+    fi
+
+    local path
+    for path in /code/start-prod.sh /code/docker-compose.prod.yml /code/frontend; do
+        msg_info "正在从镜像提取 ${path} ..."
+        if ! (set -o pipefail; sudo docker cp "${ARL_TMP_CONTAINER}:${path}" "${dest}/" 2>&1 | sed 's/^/  /'); then
+            msg_error "提取 ${path} 失败"
+            sudo docker rm -f "${ARL_TMP_CONTAINER}" >/dev/null 2>&1 || true
+            return 1
+        fi
+    done
+
+    for path in /code/updater /code/version.txt; do
+        msg_info "正在从镜像提取 ${path} ..."
+        if ! (set -o pipefail; sudo docker cp "${ARL_TMP_CONTAINER}:${path}" "${dest}/" 2>&1 | sed 's/^/  /'); then
+            msg_warning "提取 ${path} 失败, 将跳过对应可选功能"
+        fi
+    done
+
+    sudo docker rm -f "${ARL_TMP_CONTAINER}" >/dev/null 2>&1 || true
+    return 0
+}
+
+arl_compose_path() {
+    echo "${ARL_DIR}/${ARL_COMPOSE_FILE}"
+}
+
+arl_get_host_port() {
+    local extracted_port=""
+    local compose_path
+    compose_path=$(arl_compose_path)
+    if [[ -f "${compose_path}" ]]; then
+        extracted_port=$(grep -oE "[0-9]+:${ARL_DEFAULT_PORT}" "${compose_path}" | head -n 1 | cut -d: -f1 || true)
+    fi
+    echo "${extracted_port:-${ARL_DEFAULT_PORT}}"
+}
+
+open_arl_firewall_port() {
+    local port="$1"
+    if command -v firewall-cmd &>/dev/null && sudo firewall-cmd --state &>/dev/null; then
+        sudo firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 || true
+        sudo firewall-cmd --reload >/dev/null 2>&1 || true
+    elif command -v ufw &>/dev/null; then
+        sudo ufw allow "${port}/tcp" >/dev/null 2>&1 || true
+    fi
+}
+
+set_arl_host_port() {
+    local new_port="$1"
+    local current_port
+    current_port=$(arl_get_host_port)
+
+    [[ "${new_port}" == "${current_port}" ]] && return 0
+
+    msg_info "正在将ARL映射端口从${current_port}修改为${new_port}..."
+    sudo sed -i -E "s/- [\"']?[0-9]+:${ARL_DEFAULT_PORT}[\"']?/- \"${new_port}:${ARL_DEFAULT_PORT}\"/" "$(arl_compose_path)"
+    open_arl_firewall_port "${new_port}"
 }
 
 
@@ -93,77 +164,47 @@ config_arl() {
 install_arl() {
     check_docker || return 1
     check_docker_compose || return 1
-    show_section "安装灯塔ARL"
+    show_section "安装灯塔ARL (ARL-Next)"
 
     if [[ -d "${ARL_DIR}" ]]; then
         msg_success "检测到灯塔ARL已安装, 路径: ${ARL_DIR}"
         return 0
     fi
-    
+
     local host_ip
     prompt_host_ip "灯塔ARL" || return 1
 
     local host_port
     prompt_host_port "灯塔ARL" "${ARL_DEFAULT_PORT}" "host_port" || return 1
 
-    msg_info "正在预拉取核心镜像..."
-    docker_pull_image "${ARL_RABBITMQ_IMAGE}"
-    docker_pull_image "${ARL_MONGO_IMAGE}"
-
     msg_info "正在创建ARL安装目录..."
     sudo mkdir -p "${ARL_DIR}"
-    msg_info "正在创建arl_db数据卷..."
-    sudo docker volume create arl_db >/dev/null 2>&1 || true
 
-    local latest_tag_name
-    msg_info "正在获取灯塔ARL最新版本号..."
-    latest_tag_name=$(curl -s --connect-timeout 5 "${ARL_LATEST_RELEASE_API}" | grep -E -o '"tag_name":"([^"]+)"' | awk -F'"' '{print $4}' || true)
-    
-    local download_url
-    if [[ -n "${latest_tag_name}" ]]; then
-        msg_success "获取成功，发现最新版本 ARL: ${latest_tag_name}"
-        download_url="${ARL_DOWNLOAD_URL_TEMPLATE}/${latest_tag_name}/docker.zip"
-    else
-        msg_warning "获取最新版本号失败，将使用默认主线版本下载"
-        download_url="${ARL_DOWNLOAD_URL_TEMPLATE}/${ARL_DEFAULT_VERSION}/docker.zip"
-    fi
+    extract_arl_deploy_files "${ARL_WEB_IMAGE}" "${ARL_DIR}" || {
+        sudo rm -rf "${ARL_DIR}"
+        return 1
+    }
+    sudo chmod +x "${ARL_DIR}/start-prod.sh"
 
-    while true; do
-        msg_info "开始下载ARL压缩包..."
-        download_file "${download_url}" "${ARL_DIR}/docker.zip"
-        if action "下载ARL压缩包成功" "下载ARL压缩包失败 (网络连接超时或源站错误)"; then
-            msg_info "验证ARL压缩包完整性..."
-            sudo unzip -tq "${ARL_DIR}/docker.zip" >/dev/null 2>&1
-            if action "ARL压缩包完整性校验成功" "ARL压缩包损坏或格式不正确"; then
-                break
-            else
-                sudo rm -f "${ARL_DIR}/docker.zip"
-            fi
-        fi
-
-        if ! confirm "下载或校验失败，是否尝试重新下载?"; then
-            return 1
-        fi
-    done
-
-    msg_info "开始解压ARL压缩包..."
-    cd "${ARL_DIR}" || return 1
-    sudo unzip -o docker.zip > /dev/null 2>&1
-
-    if [[ "${host_port}" != "${ARL_DEFAULT_PORT}" ]]; then
-        msg_info "正在将ARL映射端口从${ARL_DEFAULT_PORT}修改为${host_port}..."
-        sudo sed -i -E "s/- [\"']?${ARL_DEFAULT_PORT}:443[\"']?/- \"${host_port}:443\"/g" docker-compose.yml
-    fi
-
-    if docker_compose_start "${ARL_DIR}" "灯塔ARL" "up"; then
-        show_access_info \
-            "访问地址: https://${host_ip}:${host_port}" \
-            "默认用户: admin" \
-            "默认密码: arlpass"
-        msg_warning "登录后请尽快修改默认密码!"
-    else
+    msg_info "正在执行 ARL-Next 一键部署 (安装依赖 / 生成证书 / 拉取镜像 / 启动服务)..."
+    if ! (cd "${ARL_DIR}" && sudo bash ./start-prod.sh); then
+        msg_error "ARL-Next 部署失败, 请根据上方日志排查后通过「启动ARL」重试"
         return 1
     fi
+
+    if [[ "${host_port}" != "${ARL_DEFAULT_PORT}" ]]; then
+        set_arl_host_port "${host_port}"
+        msg_info "正在按新端口重建前端容器..."
+        (cd "${ARL_DIR}" && sudo "${COMPOSE_CMD[@]}" -f "${ARL_COMPOSE_FILE}" up -d arl-frontend >/dev/null 2>&1) || \
+            msg_warning "前端容器重建失败, 请手动执行 docker compose -f ${ARL_COMPOSE_FILE} up -d arl-frontend"
+    fi
+
+    show_access_info \
+        "访问地址: https://${host_ip}:${host_port}" \
+        "平台账号: admin" \
+        "初始密码: docker exec ${ARL_WEB_CONTAINER} cat /tmp/arl_initial_admin_password" \
+        "网关 Basic Auth (默认关闭): admin / arl_next"
+    msg_warning "登录后请尽快修改默认密码!"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -176,7 +217,7 @@ stop_arl() {
         msg_error "未找到ARL安装目录, 请先安装"
         return 1
     fi
-    docker_compose_stop "${ARL_DIR}" "灯塔ARL"
+    docker_compose_stop "${ARL_DIR}" "灯塔ARL" -f "${ARL_COMPOSE_FILE}"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -193,28 +234,20 @@ start_arl() {
     local host_ip
     prompt_host_ip "灯塔ARL" || return 1
 
-    local current_port="${ARL_DEFAULT_PORT}"
-    if [[ -f "${ARL_DIR}/docker-compose.yml" ]]; then
-        local extracted_port
-        extracted_port=$(grep -oE "[0-9]+:443" "${ARL_DIR}/docker-compose.yml" | cut -d: -f1 || true)
-        if [[ -n "${extracted_port}" ]]; then
-            current_port="${extracted_port}"
-        fi
-    fi
+    local current_port
+    current_port=$(arl_get_host_port)
 
     local host_port
     prompt_host_port "灯塔ARL" "${current_port}" "host_port" || return 1
 
-    if [[ "${host_port}" != "${current_port}" ]]; then
-        msg_info "正在将 ARL 映射端口从 ${current_port} 修改为 ${host_port}..."
-        sudo sed -i -E "s/- [\"']?${current_port}:443[\"']?/- \"${host_port}:443\"/g" "${ARL_DIR}/docker-compose.yml"
-    fi
+    set_arl_host_port "${host_port}"
 
-    if docker_compose_start "${ARL_DIR}" "灯塔ARL" "up"; then
+    if docker_compose_start "${ARL_DIR}" "灯塔ARL" "up" -f "${ARL_COMPOSE_FILE}"; then
         show_access_info \
             "访问地址: https://${host_ip}:${host_port}" \
-            "默认用户: admin" \
-            "默认密码: arlpass"
+            "平台账号: admin" \
+            "登录密码: 首次部署生成的初始密码 (容器内 /tmp/arl_initial_admin_password)" \
+            "网关 Basic Auth (默认关闭): admin / arl_next"
         msg_warning "登录后请尽快修改默认密码!"
     else
         return 1
@@ -227,7 +260,7 @@ start_arl() {
 
 show_arl_status() {
     show_section "灯塔ARL状态信息"
-    show_compose_status_table "${ARL_DIR}" "ARL"
+    show_compose_status_table "${ARL_DIR}" "ARL" -f "${ARL_COMPOSE_FILE}"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -242,11 +275,8 @@ remove_arl() {
         if confirm "检测到ARL安装目录, 确定要删除吗?"; then
             msg_info "停止并清理ARL容器..."
             cd "${ARL_DIR}" || return 1
-            sudo "${COMPOSE_CMD[@]}" down -v >/dev/null 2>&1
-            
-            msg_info "删除ARL相关数据卷..."
-            sudo docker volume rm arl_db >/dev/null 2>&1
-            
+            sudo "${COMPOSE_CMD[@]}" -f "${ARL_COMPOSE_FILE}" down -v >/dev/null 2>&1
+
             msg_info "清理安装目录..."
             cd ~ || return 1
             sudo rm -rf "${ARL_DIR}"
@@ -257,7 +287,7 @@ remove_arl() {
     fi
 
     local images
-    images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "(^|/)arl(-|:)|rabbitmq:3.8.19|mongo:4.0.27" | grep -v "TAG" || true)
+    images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "(^|/)arl(-|:)" | grep -v "TAG" || true)
     
     if [[ -n "$images" ]]; then
         echo -e "  ${YELLOW}发现相关镜像:${NC}"
@@ -291,21 +321,18 @@ add_fingerprint_to_arl() {
     local arl_ip
     prompt_host_ip "灯塔ARL" "arl_ip" || return 1
 
-    local current_port="${ARL_DEFAULT_PORT}"
-    if [[ -f "${ARL_DIR}/docker-compose.yml" ]]; then
-        local extracted_port
-        extracted_port=$(grep -oE "[0-9]+:443" "${ARL_DIR}/docker-compose.yml" | cut -d: -f1 || true)
-        if [[ -n "${extracted_port}" ]]; then
-            current_port="${extracted_port}"
-        fi
-    fi
+    local current_port
+    current_port=$(arl_get_host_port)
 
     local arl_port
     prompt_host_port "灯塔ARL" "${current_port}" "arl_port" || return 1
     
     local arl_pass
-    read -r -p "  ${CYAN}请输入ARL的密码 [${ARL_DEFAULT_PASS}]: ${NC}" arl_pass
-    arl_pass="${arl_pass:-${ARL_DEFAULT_PASS}}"
+    read -r -p "  ${CYAN}请输入ARL的登录密码: ${NC}" arl_pass
+    if [[ -z "${arl_pass}" ]]; then
+        msg_error "密码不能为空"
+        return 1
+    fi
 
     msg_info "准备指纹更新脚本..."
     sudo rm -rf "${ARL_DIR}/ARL-Finger-ADD"
@@ -334,7 +361,7 @@ add_fingerprint_to_arl() {
                 fi
             fi
             msg_info "正在执行指纹添加 (这可能需要一些时间)..."
-            sudo "$py_cmd" ARL-Finger-ADD.py "https://${arl_ip}:${arl_port}/" "${ARL_DEFAULT_USER}" "${arl_pass}" >/dev/null 2>&1
+            sudo "$py_cmd" ARL-Finger-ADD.py "https://${arl_ip}:${arl_port}/" "admin" "${arl_pass}" >/dev/null 2>&1
             action "指纹添加任务已完成" "指纹添加任务执行失败"
         else
             msg_error "需要 Python 环境"
@@ -349,104 +376,84 @@ add_fingerprint_to_arl() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-# YAML 配置文件修改工具
+# ARL-Next 配置读写工具
+# ARL-Next2 的配置统一存放于 MongoDB system_config 集合，
+# 与 Web 端「系统设置」同一数据源，修改后约30秒内自动生效。
 # ═══════════════════════════════════════════════════════════════
 
-modify_yaml_value() {
-    local file="$1"
-    local block="$2"
-    local key="$3"
-    local val="$4"
-
-    local py_cmd
-    py_cmd=$(get_python_command) || { msg_error "需要 Python 环境"; return 1; }
-
-    sudo "$py_cmd" -c '
-import sys
-filepath = sys.argv[1]
-block = sys.argv[2]
-key = sys.argv[3]
-new_val = sys.argv[4]
-
-with open(filepath, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
-new_lines = []
-in_block = False
-block_indent = -1
-
-for line in lines:
-    stripped = line.strip()
-    if not stripped:
-        new_lines.append(line)
-        continue
-    indent = len(line) - len(line.lstrip())
-    if in_block:
-        if not stripped.startswith("#") and indent <= block_indent:
-            in_block = False
-            block_indent = -1
-    no_comment = stripped.split("#", 1)[0].strip()
-    clean_strip = no_comment.replace(" ", "").replace("\"", "").replace(chr(39), "")
-    if clean_strip == block + ":":
-        in_block = True
-        block_indent = indent
-        new_lines.append(line)
-        continue
-    if in_block and not stripped.startswith("#"):
-        parts = stripped.split(":", 1)
-        if len(parts) > 0 and parts[0].strip() == key:
-            indent_str = line[:len(line) - len(line.lstrip())]
-            new_lines.append(f"{indent_str}{key}: {new_val}\n")
-            continue
-    new_lines.append(line)
-
-with open(filepath, "w", encoding="utf-8") as f:
-    f.writelines(new_lines)
-' "$file" "$block" "$key" "$val"
+arl_mongo_available() {
+    sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${ARL_MONGO_CONTAINER}"
 }
 
-read_yaml_value() {
-    local file="$1"
-    local block="$2"
-    local key="$3"
+arl_mongo_eval() {
+    local js="$1"
+    shift
+    if ! arl_mongo_available; then
+        msg_error "未检测到运行中的 ${ARL_MONGO_CONTAINER} 容器, 请先启动ARL"
+        return 1
+    fi
+    sudo docker exec "$@" "${ARL_MONGO_CONTAINER}" mongosh "${ARL_MONGO_URI}" --quiet --eval "${js}"
+}
 
-    local py_cmd
-    py_cmd=$(get_python_command) || return 1
+arl_config_get() {
+    local key="$1"
+    arl_mongo_eval 'const d = db.system_config.findOne({_id: "general_config"}) || {}; const v = d[process.env.ARL_CFG_KEY]; if (v === undefined || v === null) { print(""); } else if (typeof v === "object") { print(JSON.stringify(v)); } else { print(String(v)); }' -e "ARL_CFG_KEY=${key}"
+}
 
-    sudo "$py_cmd" -c '
-import sys
-filepath = sys.argv[1]
-block = sys.argv[2]
-key = sys.argv[3]
+arl_config_set() {
+    local key="$1"
+    local json_value="$2"
+    arl_mongo_eval 'const v = JSON.parse(process.env.ARL_CFG_VALUE); db.system_config.updateOne({_id: "general_config"}, {$set: {[process.env.ARL_CFG_KEY]: v}}, {upsert: true}); db.system_config.updateOne({_id: "_config_cache_version"}, {$inc: {version: 1}}, {upsert: true});' -e "ARL_CFG_KEY=${key}" -e "ARL_CFG_VALUE=${json_value}" >/dev/null
+}
 
-with open(filepath, "r", encoding="utf-8") as f:
-    lines = f.readlines()
+arl_plugin_web_python() {
+    local code="$1"
+    if ! sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${ARL_WEB_CONTAINER}"; then
+        msg_error "未检测到运行中的 ${ARL_WEB_CONTAINER} 容器, 请先启动ARL"
+        return 1
+    fi
+    sudo docker exec -w /code/backend "${ARL_WEB_CONTAINER}" \
+        /code/backend/.venv-docker/bin/python3 -c "${code}"
+}
 
-in_block = False
-block_indent = -1
+arl_plugin_get_all() {
+    arl_plugin_web_python 'from app.config import Config; import json; print("ARL_JSON:" + json.dumps(Config.QUERY_PLUGIN_CONFIG))' 2>/dev/null | grep "^ARL_JSON:" | head -n 1 | sed 's/^ARL_JSON://'
+}
 
-for line in lines:
-    stripped = line.strip()
-    if not stripped:
-        continue
-    indent = len(line) - len(line.lstrip())
-    if in_block:
-        if not stripped.startswith("#") and indent <= block_indent:
-            in_block = False
-            block_indent = -1
-    no_comment = stripped.split("#", 1)[0].strip()
-    clean_strip = no_comment.replace(" ", "").replace("\"", "").replace(chr(39), "")
-    if clean_strip == block + ":":
-        in_block = True
-        block_indent = indent
-        continue
-    if in_block and not stripped.startswith("#"):
-        parts = stripped.split(":", 1)
-        if len(parts) > 0 and parts[0].strip() == key:
-            print(parts[1].strip())
-            sys.exit(0)
-sys.exit(1)
-' "$file" "$block" "$key"
+arl_plugin_get() {
+    local plugin="$1"
+    local field="$2"
+    arl_plugin_web_python "from app.config import Config; v = (Config.QUERY_PLUGIN_CONFIG.get('${plugin}') or {}).get('${field}', ''); print('ARL_VAL:' + (('true' if v is True else 'false') if isinstance(v, bool) else str(v)))" 2>/dev/null | grep "^ARL_VAL:" | head -n 1 | sed 's/^ARL_VAL://'
+}
+
+arl_plugin_set() {
+    local plugin="$1"
+    local field="$2"
+    local value="$3"
+    local value_type="$4"
+
+    local plugin_json
+    plugin_json=$(arl_plugin_get_all) || return 1
+    if [[ -z "${plugin_json}" ]]; then
+        msg_error "读取ARL三方插件配置失败"
+        return 1
+    fi
+
+    arl_mongo_eval 'const q = JSON.parse(process.env.ARL_PLUGIN_CFG || "{}"); q[process.env.ARL_PLUGIN] = q[process.env.ARL_PLUGIN] || {}; if (process.env.ARL_VALUE_TYPE === "bool") { q[process.env.ARL_PLUGIN][process.env.ARL_FIELD] = process.env.ARL_VALUE === "true"; } else { q[process.env.ARL_PLUGIN][process.env.ARL_FIELD] = process.env.ARL_VALUE; } db.system_config.updateOne({_id: "general_config"}, {$set: {query_plugin_config: q}}, {upsert: true}); db.system_config.updateOne({_id: "_config_cache_version"}, {$inc: {version: 1}}, {upsert: true});' -e "ARL_PLUGIN_CFG=${plugin_json}" -e "ARL_PLUGIN=${plugin}" -e "ARL_FIELD=${field}" -e "ARL_VALUE=${value}" -e "ARL_VALUE_TYPE=${value_type}" >/dev/null
+}
+
+arl_get_forbidden_domains() {
+    arl_mongo_eval 'const d = db.system_config.findOne({_id: "security_policy"}) || {}; const list = Array.isArray(d.forbidden_domains) ? d.forbidden_domains : []; print(list.join("\n"));'
+}
+
+arl_add_forbidden_domain() {
+    local domain="$1"
+    arl_mongo_eval 'const d = db.system_config.findOne({_id: "security_policy"}) || {}; const list = Array.isArray(d.forbidden_domains) ? d.forbidden_domains : []; if (!list.includes(process.env.ARL_DOMAIN)) { list.push(process.env.ARL_DOMAIN); } db.system_config.updateOne({_id: "security_policy"}, {$set: {forbidden_domains: list}}, {upsert: true}); db.system_config.updateOne({_id: "_config_cache_version"}, {$inc: {version: 1}}, {upsert: true});' -e "ARL_DOMAIN=${domain}" >/dev/null
+}
+
+arl_del_forbidden_domain() {
+    local domain="$1"
+    arl_mongo_eval 'const d = db.system_config.findOne({_id: "security_policy"}) || {}; const list = (Array.isArray(d.forbidden_domains) ? d.forbidden_domains : []).filter(function (x) { return x !== process.env.ARL_DOMAIN; }); db.system_config.updateOne({_id: "security_policy"}, {$set: {forbidden_domains: list}}, {upsert: true}); db.system_config.updateOne({_id: "_config_cache_version"}, {$inc: {version: 1}}, {upsert: true});' -e "ARL_DOMAIN=${domain}" >/dev/null
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -460,9 +467,8 @@ modify_arl_config() {
         return 1
     fi
 
-    local config_file="${ARL_CONFIG_FILE}"
-    if [[ ! -f "$config_file" ]]; then
-        msg_error "未找到 ARL 配置文件: $config_file"
+    if ! arl_mongo_available; then
+        msg_error "未检测到运行中的 ${ARL_MONGO_CONTAINER} 容器, 请先启动ARL服务"
         pause
         return 1
     fi
@@ -484,10 +490,10 @@ modify_arl_config() {
         case $choice in
             0) pop_path; return ;;
             q|Q) exit 0 ;;
-            1) modify_arl_fofa "$config_file"; pause ;;
-            2) modify_arl_thirdparty_api "$config_file"; ret=$?; [[ $ret -eq 255 ]] && continue; pause ;;
-            3) manage_arl_forbidden_domains "$config_file" ;;
-            4) modify_arl_dict "$config_file" ;;
+            1) modify_arl_fofa; pause ;;
+            2) modify_arl_thirdparty_api; ret=$?; [[ $ret -eq 255 ]] && continue; pause ;;
+            3) manage_arl_forbidden_domains ;;
+            4) modify_arl_dict ;;
             5) add_fingerprint_to_arl; pause ;;
             6) change_arl_password; pause ;;
             7) restart_arl_services; pause ;;
@@ -498,34 +504,30 @@ modify_arl_config() {
 }
 
 modify_arl_fofa() {
-    local config_file="$1"
     show_section "修改 FOFA API"
 
-    local current_email; current_email=$(read_yaml_value "$config_file" "FOFA" "EMAIL" || echo "")
-    local current_key; current_key=$(read_yaml_value "$config_file" "FOFA" "KEY" || echo "")
+    local current_key current_url
+    current_key=$(arl_config_get "fofa_key" || echo "")
+    current_url=$(arl_config_get "fofa_url" || echo "")
 
-    msg_info "当前 FOFA 邮箱: ${current_email:-未配置}"
+    msg_info "当前 FOFA 地址: ${current_url:-未配置}"
     msg_info "当前 FOFA Key : ${current_key:-未配置}"
+    msg_info "ARL-Next 已无需配置 FOFA 邮箱"
     draw_line "-"
 
-    local email
-    read -r -p "  ${CYAN}请输入新的 FOFA 邮箱 (回车保持不变): ${NC}" email
-    email="${email:-$current_email}"
-    email=$(echo "$email" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
-
     local key
-    read -r -p "  ${CYAN}请输入新的 FOFA Key  (回车保持不变): ${NC}" key
+    read -r -p "  ${CYAN}请输入新的 FOFA Key (回车保持不变): ${NC}" key
     key="${key:-$current_key}"
-    key=$(echo "$key" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
 
-    modify_yaml_value "$config_file" "FOFA" "EMAIL" "\"$email\""
-    modify_yaml_value "$config_file" "FOFA" "KEY" "\"$key\""
-    
-    msg_success "FOFA API 配置修改完成"
+    if arl_config_set "fofa_key" "\"${key}\""; then
+        msg_success "FOFA Key 已保存 (约30秒内自动生效)"
+    else
+        msg_error "FOFA Key 保存失败"
+        return 1
+    fi
 }
 
 modify_arl_thirdparty_api() {
-    local config_file="$1"
     push_path "修改三方 API"
     while true; do
         show_submenu "修改三方 API" \
@@ -554,17 +556,17 @@ modify_arl_thirdparty_api() {
         esac
 
         show_section "配置 $plugin_name"
-        local current_key; current_key=$(read_yaml_value "$config_file" "$plugin_name" "$token_key" || echo "")
-        local current_enable; current_enable=$(read_yaml_value "$config_file" "$plugin_name" "enable" || echo "")
+        local current_key; current_key=$(arl_plugin_get "$plugin_name" "$token_key" || echo "")
+        local current_enable; current_enable=$(arl_plugin_get "$plugin_name" "enable" || echo "")
+        current_enable="${current_enable:-true}"
 
         msg_info "当前API Key/Token : ${current_key:-未配置}"
-        msg_info "当前启用状态      : ${current_enable:-false}"
+        msg_info "当前启用状态      : ${current_enable}"
         draw_line "-"
 
         local new_key
         read -r -p "  ${CYAN}请输入新的 API Key/Token (回车保持不变): ${NC}" new_key
         new_key="${new_key:-$current_key}"
-        new_key=$(echo "$new_key" | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")
 
         local enable_choice
         if confirm "是否启用该插件?"; then
@@ -573,52 +575,32 @@ modify_arl_thirdparty_api() {
             enable_choice="false"
         fi
 
-        modify_yaml_value "$config_file" "$plugin_name" "$token_key" "\"$new_key\""
-        modify_yaml_value "$config_file" "$plugin_name" "enable" "$enable_choice"
+        if ! arl_plugin_set "$plugin_name" "$token_key" "$new_key" "string"; then
+            msg_error "$plugin_name 配置保存失败"
+            pause
+            continue
+        fi
+        if ! arl_plugin_set "$plugin_name" "enable" "$enable_choice" "bool"; then
+            msg_error "$plugin_name 启用状态保存失败"
+            pause
+            continue
+        fi
 
-        msg_success "$plugin_name 配置修改完成"
+        msg_success "$plugin_name 配置已保存 (约30秒内自动生效)"
         break
     done
     pop_path
 }
 
 manage_arl_forbidden_domains() {
-    local config_file="$1"
-    
-    local py_cmd
-    py_cmd=$(get_python_command) || { msg_error "需要 Python 环境"; return 1; }
-
     push_path "管理禁止域名"
     while true; do
         show_submenu "禁止域名操作" \
             "新增禁止域名" \
             "删除禁止域名"
-        
+
         local domains
-        domains=$(sudo "$py_cmd" -c '
-import sys
-with open(sys.argv[1], "r", encoding="utf-8") as f:
-    lines = f.readlines()
-in_block = False
-block_indent = -1
-for line in lines:
-    stripped = line.strip()
-    if not stripped:
-        continue
-    indent = len(line) - len(line.lstrip())
-    if in_block:
-        if not stripped.startswith("#") and not stripped.startswith("-") and indent <= block_indent:
-            in_block = False
-            block_indent = -1
-    no_comment = stripped.split("#", 1)[0].strip()
-    if no_comment.replace(" ", "").replace("\"", "").replace(chr(39), "") == "FORBIDDEN_DOMAINS:":
-        in_block = True
-        block_indent = indent
-        continue
-    if in_block and stripped.startswith("-"):
-        domain = stripped.replace("-", "").strip().strip("\"").strip(chr(39))
-        print(domain)
-' "$config_file")
+        domains=$(arl_get_forbidden_domains || echo "")
 
         local domain_list=()
         if [[ -n "$domains" ]]; then
@@ -651,46 +633,11 @@ for line in lines:
                     pause
                     continue
                 fi
-                sudo "$py_cmd" -c '
-import sys
-filepath = sys.argv[1]
-new_domain = sys.argv[2]
-with open(filepath, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
-target_index = -1
-for i, line in enumerate(lines):
-    stripped = line.strip()
-    no_comment = stripped.split("#", 1)[0].strip()
-    if no_comment.replace(" ", "").replace("\"", "").replace(chr(39), "") == "FORBIDDEN_DOMAINS:":
-        target_index = i
-        break
-
-if target_index != -1:
-    last_item_idx = target_index
-    indent = len(lines[target_index]) - len(lines[target_index].lstrip())
-    list_indent = indent + 4
-    
-    for j in range(target_index + 1, len(lines)):
-        line_j = lines[j]
-        stripped_j = line_j.strip()
-        if not stripped_j:
-            continue
-        indent_j = len(line_j) - len(line_j.lstrip())
-        if stripped_j.startswith("#"):
-            continue
-        if stripped_j.startswith("-"):
-            last_item_idx = j
-            list_indent = indent_j
-        elif indent_j <= indent:
-            break
-            
-    lines.insert(last_item_idx + 1, " " * list_indent + f"- {new_domain}\n")
-
-with open(filepath, "w", encoding="utf-8") as f:
-    f.writelines(lines)
-' "$config_file" "$new_domain"
-                msg_success "已成功新增禁止域名: $new_domain"
+                if arl_add_forbidden_domain "$new_domain"; then
+                    msg_success "已成功新增禁止域名: $new_domain"
+                else
+                    msg_error "新增禁止域名失败"
+                fi
                 ;;
             2)
                 if [[ ${#domain_list[@]} -eq 0 ]]; then
@@ -705,43 +652,11 @@ with open(filepath, "w", encoding="utf-8") as f:
                     continue
                 fi
                 local del_domain="${domain_list[$((del_idx-1))]}"
-                sudo "$py_cmd" -c '
-import sys
-filepath = sys.argv[1]
-del_domain = sys.argv[2]
-with open(filepath, "r", encoding="utf-8") as f:
-    lines = f.readlines()
-
-target_index = -1
-for i, line in enumerate(lines):
-    stripped = line.strip()
-    no_comment = stripped.split("#", 1)[0].strip()
-    if no_comment.replace(" ", "").replace("\"", "").replace(chr(39), "") == "FORBIDDEN_DOMAINS:":
-        target_index = i
-        break
-
-if target_index != -1:
-    indent = len(lines[target_index]) - len(lines[target_index].lstrip())
-    for j in range(target_index + 1, len(lines)):
-        line_j = lines[j]
-        stripped_j = line_j.strip()
-        if not stripped_j:
-            continue
-        indent_j = len(line_j) - len(line_j.lstrip())
-        if stripped_j.startswith("#"):
-            continue
-        if stripped_j.startswith("-"):
-            domain = stripped_j.replace("-", "").strip().strip("\"").strip(chr(39))
-            if domain == del_domain:
-                del lines[j]
-                break
-        elif indent_j <= indent:
-            break
-
-with open(filepath, "w", encoding="utf-8") as f:
-    f.writelines(lines)
-' "$config_file" "$del_domain"
-                msg_success "已成功删除禁止域名: $del_domain"
+                if arl_del_forbidden_domain "$del_domain"; then
+                    msg_success "已成功删除禁止域名: $del_domain"
+                else
+                    msg_error "删除禁止域名失败"
+                fi
                 ;;
             *)
                 msg_error "无效选择"
@@ -753,10 +668,9 @@ with open(filepath, "w", encoding="utf-8") as f:
 }
 
 update_arl_dict_file() {
-    local config_file="$1"
+    local config_key="$1"
     local containers="$2"
-    local yaml_key="$3"
-    local dict_name="$4"
+    local dict_name="$3"
 
     local local_path
     read -r -p "  ${CYAN}请输入本地${dict_name}的绝对路径: ${NC}" local_path
@@ -789,27 +703,28 @@ update_arl_dict_file() {
     fi
 
     if $copy_failed; then
-        msg_error "由于容器复制过程出现错误，未更新 YAML 配置文件中的字典路径"
+        msg_error "由于容器复制过程出现错误，未更新数据库中的字典路径"
         pause
         return 1
     fi
 
-    modify_yaml_value "$config_file" "ARL" "$yaml_key" "\"$container_path\""
-    msg_success "配置文件中的${dict_name}路径已更新为: $container_path"
+    if arl_config_set "$config_key" "\"${container_path}\""; then
+        msg_success "字典路径已更新为: $container_path (约30秒内自动生效)"
+    else
+        msg_error "字典路径保存失败"
+    fi
     pause
 }
 
 modify_arl_dict() {
-    local config_file="$1"
-
     push_path "修改爆破字典路径"
     while true; do
         show_submenu "修改爆破字典路径" \
             "修改域名爆破字典" \
             "修改文件泄漏字典"
 
-        local current_domain_dict; current_domain_dict=$(read_yaml_value "$config_file" "ARL" "DOMAIN_DICT" || echo "")
-        local current_file_leak_dict; current_file_leak_dict=$(read_yaml_value "$config_file" "ARL" "FILE_LEAK_DICT" || echo "")
+        local current_domain_dict; current_domain_dict=$(arl_config_get "domain_dict" || echo "")
+        local current_file_leak_dict; current_file_leak_dict=$(arl_config_get "file_leak_dict" || echo "")
 
         draw_line "-"
         msg_info "当前域名爆破字典: ${current_domain_dict:-未配置}"
@@ -819,7 +734,7 @@ modify_arl_dict() {
         local containers
         containers=$(sudo docker ps -a --format '{{.Names}}' | grep -E "${ARL_CONTAINER_PATTERN}" || true)
         if [[ -z "$containers" ]]; then
-            msg_warning "未检测到运行中的 ARL 容器，字典文件将在下次启动或手动复制后生效"
+            msg_warning "未检测到 ARL 容器，字典文件将在下次启动或手动复制后生效"
         fi
 
         local choice
@@ -829,10 +744,10 @@ modify_arl_dict() {
 
         case $choice in
             1)
-                update_arl_dict_file "$config_file" "$containers" "DOMAIN_DICT" "域名爆破字典"
+                update_arl_dict_file "domain_dict" "$containers" "域名爆破字典"
                 ;;
             2)
-                update_arl_dict_file "$config_file" "$containers" "FILE_LEAK_DICT" "文件泄漏字典"
+                update_arl_dict_file "file_leak_dict" "$containers" "文件泄漏字典"
                 ;;
             *)
                 msg_error "无效选择"
@@ -845,8 +760,8 @@ modify_arl_dict() {
 
 restart_arl_services() {
     if confirm "要立即重启 ARL 服务以应用新配置吗?"; then
-        docker_compose_stop "${ARL_DIR}" "灯塔ARL"
-        docker_compose_start "${ARL_DIR}" "灯塔ARL" "up"
+        docker_compose_stop "${ARL_DIR}" "灯塔ARL" -f "${ARL_COMPOSE_FILE}"
+        docker_compose_start "${ARL_DIR}" "灯塔ARL" "up" -f "${ARL_COMPOSE_FILE}"
     fi
 }
 
@@ -861,35 +776,25 @@ change_arl_password() {
         return 1
     fi
 
-    local mongo_container
-    mongo_container=$(sudo docker ps --format '{{.Names}}' | grep -E "arl[-_]mongodb|arl[-_]mongo" | head -n 1)
-    if [[ -z "$mongo_container" ]]; then
-        mongo_container=$(sudo docker ps --filter "ancestor=${ARL_MONGO_IMAGE}" --format '{{.Names}}' | head -n 1)
-    fi
-
-    if [[ -z "$mongo_container" ]]; then
-        msg_error "未检测到运行中的ARL MongoDB容器, 请确保ARL服务已启动"
+    if ! sudo docker ps --format '{{.Names}}' | grep -qx "${ARL_WEB_CONTAINER}"; then
+        msg_error "未检测到运行中的 ${ARL_WEB_CONTAINER} 容器, 请确保ARL服务已启动"
         return 1
     fi
 
     local arl_pass
-    read -r -p "  ${CYAN}请输入新的ARL登录密码: ${NC}" arl_pass
-    if [[ -z "${arl_pass}" ]]; then
-        msg_error "密码不能为空"
+    read -r -p "  ${CYAN}请输入新的ARL登录密码 (至少12位): ${NC}" arl_pass
+    if [[ ${#arl_pass} -lt 12 ]]; then
+        msg_error "密码长度不足12位"
         return 1
     fi
 
     msg_info "正在修改ARL登录密码..."
-    if sudo docker exec -i "${mongo_container}" mongo -u admin -p admin <<EOF >/dev/null 2>&1
-use arl
-db.user.drop()
-db.user.insert({ username: 'admin', password: hex_md5('arlsalt!@#'+'${arl_pass}') })
-EOF
-    then
+    if sudo docker exec -e "ARL_ADMIN_PASSWORD=${arl_pass}" "${ARL_WEB_CONTAINER}" \
+        /code/backend/.venv-docker/bin/python3 /code/backend/inject_user.py --reset; then
         msg_success "ARL登录密码修改成功!"
         msg_info "新密码为: ${arl_pass}"
     else
-        msg_error "修改ARL密码失败, 请检查MongoDB容器状态或日志"
+        msg_error "修改ARL密码失败, 请检查 ${ARL_WEB_CONTAINER} 容器状态或日志"
         return 1
     fi
 }
